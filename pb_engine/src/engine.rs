@@ -15,7 +15,7 @@ use crate::{
 use activities::Activities;
 use assignment_queue::AssignmentQueue;
 use either::Either;
-use std::ops::Deref;
+use std::{env::var, ops::Deref};
 
 pub use reason::Reason;
 
@@ -159,10 +159,6 @@ impl PBEngine {
         return self.activities.assignment_probability(literal);
     }
 
-    pub fn conflict_probability(&self, literal: Literal) -> f64 {
-        return self.activities.conflict_probability(literal);
-    }
-
     pub fn activity(&self, index: usize) -> f64 {
         return self.activities.activity(index);
     }
@@ -240,10 +236,29 @@ impl PBEngine {
         // return self.state();
     }
 
-    pub fn decide(&mut self, literal: Literal) {
+    // pub fn decide(&mut self, literal: Literal) {
+    //     assert!(self.state.is_noconflict());
+    //     debug_assert!(self.assignment_queue.is_empty());
+    //     self.assignment_queue.push(literal, Reason::Decision, 1);
+    //     // self.propagate();
+    //     // return self.state();
+    // }
+    pub fn decide(&mut self) {
         assert!(self.state.is_noconflict());
         debug_assert!(self.assignment_queue.is_empty());
-        self.assignment_queue.push(literal, Reason::Decision, 1);
+        let decision_variable = {
+            let mut decision_variable = None;
+            loop {
+                let variable = self.activities.pop_unassigned_variable().unwrap();
+                if !self.decision_stack.is_assigned(variable) {
+                    decision_variable.replace(variable);
+                    break;
+                }
+            }
+            decision_variable.unwrap()
+        };
+        let decision_value = self.decision_stack.get_value(decision_variable);
+        self.assignment_queue.push(Literal::new(decision_variable, decision_value), Reason::Decision, 1);
         // self.propagate();
         // return self.state();
     }
@@ -255,6 +270,11 @@ impl PBEngine {
             .backjump(backjump_level, &self.decision_stack);
         self.monadic_clause_theory
             .backjump(backjump_level, &self.decision_stack);
+
+        for order in self.decision_stack.order_range(backjump_level).end..self.decision_stack.number_of_assignments() {
+            self.activities.push_unassigned_variable(self.decision_stack.get_assignment(order).index());
+        }
+
         self.decision_stack.backjump(backjump_level);
         self.state = PBState::Noconflict;
         return self.state();

@@ -1,11 +1,13 @@
+use utility::HeapedMap;
+
 use crate::{Literal, collections::LiteralArray};
 
 pub struct Activities {
     time_constant: f64,
     assignment_probabilities: LiteralArray<f64>,
-    conflict_probabilities: LiteralArray<f64>,
     activities: Vec<f64>,
     activity_increase_value: f64,
+    unassigned_variables: HeapedMap<f64, CompareUnassignedVariables>
 }
 
 impl Activities {
@@ -14,16 +16,17 @@ impl Activities {
         Self {
             time_constant,
             assignment_probabilities: LiteralArray::default(),
-            conflict_probabilities: LiteralArray::default(),
             activities: Vec::default(),
             activity_increase_value: 1.0,
+            unassigned_variables: HeapedMap::default(),
         }
     }
 
     pub fn add_variable(&mut self) {
+        let index = self.assignment_probabilities.len();
         self.assignment_probabilities.push([0.0, 0.0]);
-        self.conflict_probabilities.push([0.0, 0.0]);
         self.activities.push(0.0);
+        self.unassigned_variables.insert(index, 0.0);
     }
 
     pub fn update_assignment_probabilities(&mut self, assignments: impl Iterator<Item = Literal>) {
@@ -44,21 +47,21 @@ impl Activities {
     ) {
         self.activity_increase_value /= 1.0 - 1.0 / self.time_constant;
         if self.activity_increase_value > 1e4 {
+            let buffer = Vec::from_iter(self.unassigned_variables.iter().map(|(&index, &activity)| (index, activity)));
+            self.unassigned_variables.clear();
+            for (index, activity) in buffer.into_iter() {
+                debug_assert!(activity == self.activities[index]);
+                self.unassigned_variables.insert(index, activity / self.activity_increase_value);
+            }
             for activity in self.activities.iter_mut() {
                 *activity /= self.activity_increase_value;
             }
             self.activity_increase_value = 1.0;
         }
 
-        let r = 1.0 - 1.0 / self.time_constant;
-        for [p, q] in self.conflict_probabilities.iter_mut() {
-            *p *= r;
-            *q *= r;
-        }
-
         for assignment in conflict_assignments {
-            self.conflict_probabilities[assignment] += 1.0 - r;
             self.activities[assignment.index()] += self.activity_increase_value;
+            self.unassigned_variables.insert(assignment.index(), self.activities[assignment.index()]);
         }
     }
 
@@ -66,11 +69,39 @@ impl Activities {
         return self.assignment_probabilities[literal];
     }
 
-    pub fn conflict_probability(&self, literal: Literal) -> f64 {
-        return self.conflict_probabilities[literal];
-    }
-
     pub fn activity(&self, index: usize) -> f64 {
         return self.activities[index] / self.activity_increase_value;
+    }
+
+    pub fn push_unassigned_variable(&mut self, index: usize) {
+        self.unassigned_variables.insert(index, self.activities[index]);
+    }
+
+    pub fn pop_unassigned_variable(&mut self) -> Option<usize> {
+        return self.unassigned_variables.pop_first().map(|(index, _)| index);
+    }
+
+}
+
+
+#[derive(Default, Clone)]
+struct CompareUnassignedVariables {}
+
+impl FnOnce<(&(usize, f64), &(usize, f64))> for CompareUnassignedVariables {
+    type Output = std::cmp::Ordering;
+    extern "rust-call" fn call_once(self, (lhs, rhs): (&(usize, f64), &(usize, f64))) -> Self::Output {
+        rhs.1.partial_cmp(&lhs.1).unwrap()
+    }
+}
+
+impl FnMut<(&(usize, f64), &(usize, f64))> for CompareUnassignedVariables {
+    extern "rust-call" fn call_mut(&mut self, (lhs, rhs): (&(usize, f64), &(usize, f64))) -> Self::Output {
+        rhs.1.partial_cmp(&lhs.1).unwrap()
+    }
+}
+
+impl Fn<(&(usize, f64), &(usize, f64))> for CompareUnassignedVariables {
+    extern "rust-call" fn call(&self, (lhs, rhs): (&(usize, f64), &(usize, f64))) -> Self::Output {
+        rhs.1.partial_cmp(&lhs.1).unwrap()
     }
 }

@@ -223,36 +223,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
             // TODO reduce
         } else {
-            let decision_variable = {
-                let mut decision_variable = None;
-                let mut max_activity = 0.0;
-                for index in 0..pb_engine.number_of_variables() {
-                    if pb_engine.is_assigned(index) {
-                        continue;
-                    }
-                    // let p = [
-                    //     pb_engine.assignment_probability(Literal::new(index, Boolean::FALSE)),
-                    //     pb_engine.assignment_probability(Literal::new(index, Boolean::TRUE)),
-                    // ];
-                    // let q = [
-                    //     pb_engine.conflict_probability(Literal::new(index, Boolean::FALSE)),
-                    //     pb_engine.conflict_probability(Literal::new(index, Boolean::TRUE)),
-                    // ];
-                    // let r = [
-                    //     if p[0] == 0.0 { 0.0 } else { q[0] / p[0] },
-                    //     if p[1] == 0.0 { 0.0 } else { q[1] / p[1] },
-                    // ];
-                    // let activity = r[0] + r[1];
-                    let activity = pb_engine.activity(index);
-                    if decision_variable.is_none() ||  activity > max_activity {
-                        max_activity = activity;
-                        decision_variable = Some(index);
-                    }
-                }
-                decision_variable.unwrap()
-            };         
-            let decision_value = pb_engine.get_value(decision_variable);
-            pb_engine.decide(Literal::new(decision_variable, decision_value));
+            pb_engine.decide();
         }
     }
 }
