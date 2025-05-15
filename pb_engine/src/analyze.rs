@@ -158,7 +158,10 @@ impl Analyze {
                 .conflict_constraint
                 .iter_terms()
                 .map(|(literal, _)| literal)
-                .filter(|&literal| engine.is_false_at(literal, conflict_order - 1) && engine.get_reason(literal.index()).unwrap().is_propagation())
+                .filter(|&literal| {
+                    engine.is_false_at(literal, conflict_order - 1)
+                        && engine.get_reason(literal.index()).unwrap().is_propagation()
+                })
                 .max_by_key(|&literal| engine.get_assignment_order(literal.index()))
                 .unwrap()
                 .index();
@@ -181,14 +184,19 @@ impl Analyze {
                 engine,
             );
 
-            let max_coefficient = resolved_constraint.iter_terms().map(|(_, coefficient)| coefficient).max().unwrap_or(0);
+            let max_coefficient = resolved_constraint
+                .iter_terms()
+                .map(|(_, coefficient)| coefficient)
+                .max()
+                .unwrap_or(0);
             if max_coefficient <= 1000000 {
                 self.conflict_constraint.replace(&resolved_constraint);
             } else {
-                let flattened_constraint = self.flatten.call(&resolved_constraint, conflict_order, engine);
+                let flattened_constraint =
+                    self.flatten
+                        .call(&resolved_constraint, conflict_order, engine);
                 self.conflict_constraint.replace(&flattened_constraint);
             }
-            
         }
     }
 }

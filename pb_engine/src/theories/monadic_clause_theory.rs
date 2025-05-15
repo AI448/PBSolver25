@@ -15,14 +15,16 @@ pub struct MonadicClauseTheory {
 
 impl MonadicClauseTheory {
     pub fn new() -> Self {
-        Self { monadic_clauses: Vec::default(), number_of_evaluated_assignments: 0 }
+        Self {
+            monadic_clauses: Vec::default(),
+            number_of_evaluated_assignments: 0,
+        }
     }
 
     pub fn number_of_monadic_clauses(&self) -> usize {
         return self.monadic_clauses.len();
     }
 }
-
 
 impl TheoryTrait for MonadicClauseTheory {
     type ExplainKey = MonadicClauseExplainKey;

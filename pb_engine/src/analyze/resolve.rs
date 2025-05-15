@@ -1,5 +1,7 @@
 use crate::{
-    analyze::utility::strengthen_integer_linear_constraint, constraints::RandomAccessibleLinearConstraint, LinearConstraintTrait, Literal, PBEngine
+    LinearConstraintTrait, Literal, PBEngine,
+    analyze::utility::strengthen_integer_linear_constraint,
+    constraints::RandomAccessibleLinearConstraint,
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
@@ -23,10 +25,18 @@ impl Resolve {
         resolving_variable: usize,
         engine: &PBEngine,
     ) -> impl LinearConstraintTrait<Value = u64> + '_ {
+        let propagated_literal = reason_constraint
+            .iter_terms()
+            .find(|&(literal, _)| literal.index() == resolving_variable)
+            .unwrap()
+            .0;
 
-        let propagated_literal = reason_constraint.iter_terms().find(|&(literal, _)| literal.index() == resolving_variable).unwrap().0;
-
-        debug_assert!(conflict_constraint.iter_terms().find(|&(literal, _)| literal == !propagated_literal).is_some());
+        debug_assert!(
+            conflict_constraint
+                .iter_terms()
+                .find(|&(literal, _)| literal == !propagated_literal)
+                .is_some()
+        );
 
         self.conflict_constraint
             .replace_by_linear_constraint(&conflict_constraint);

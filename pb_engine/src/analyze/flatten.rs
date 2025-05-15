@@ -1,6 +1,8 @@
 use std::cmp::{Reverse, max, min};
 use std::u64;
 
+use ordered_float::OrderedFloat;
+
 use crate::analyze::utility::divide_linear_constraint;
 use crate::{LinearConstraintTrait, PBEngine};
 
@@ -39,16 +41,21 @@ impl FlattenConflictConstraint {
             &conflict_constraint,
             conflict_order,
             |literal, coefficient| {
-                (
-                    // 係数が大きいものを優先
-                    coefficient,
-                    // 割り当て順序が早いものを優先
-                    Reverse(engine.get_assignment_order(literal.index())),
-                )
+                // (
+                // 係数が大きいものを優先
+                // coefficient,
+                // 割り当て順序が早いものを優先
+                Reverse(engine.get_assignment_order(literal.index()))
+                // OrderedFloat::from(engine.activity(literal.index()))
+                // )
             },
             engine,
         );
-        debug_assert!(causals.iter().all(|literal| engine.is_true_at(literal, conflict_order)));
+        debug_assert!(
+            causals
+                .iter()
+                .all(|literal| engine.is_true_at(literal, conflict_order))
+        );
 
         // weaken
         let weakened_conflict_constraint = self.weaken.call(
@@ -73,7 +80,10 @@ impl FlattenConflictConstraint {
             .unwrap();
 
         let divisor = max(max_coefficient / self.threshold, min_causal_coefficient);
-        eprintln!("FLATTEN max_coefficient={}, min_causal_coefficient={}, divisor={}", max_coefficient, min_causal_coefficient, divisor);
+        eprintln!(
+            "FLATTEN max_coefficient={}, min_causal_coefficient={}, divisor={}",
+            max_coefficient, min_causal_coefficient, divisor
+        );
 
         let normalized_conflict_constraint =
             divide_linear_constraint(&weakened_conflict_constraint, divisor as f64);

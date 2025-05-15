@@ -117,7 +117,6 @@ where
         let lower = constraint.lower();
 
         if (lower as usize) < constraint.len() {
-    
             let number_of_watching_literals = lower as usize + 1;
             // False が割り当てられているリテラルを後ろに寄せる
             {

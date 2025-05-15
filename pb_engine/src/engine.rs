@@ -172,7 +172,9 @@ impl PBEngine {
     }
 
     pub fn number_of_integer_linear_constraints(&self) -> usize {
-        return self.integer_linear_constraint_theory.number_of_constraints();
+        return self
+            .integer_linear_constraint_theory
+            .number_of_constraints();
     }
 
     pub fn add_variable_with_initial_value(&mut self, initial_value: Boolean) {
@@ -258,21 +260,29 @@ impl PBEngine {
             decision_variable.unwrap()
         };
         let decision_value = self.decision_stack.get_value(decision_variable);
-        self.assignment_queue.push(Literal::new(decision_variable, decision_value), Reason::Decision, 1);
+        self.assignment_queue.push(
+            Literal::new(decision_variable, decision_value),
+            Reason::Decision,
+            1,
+        );
         // self.propagate();
         // return self.state();
     }
 
     pub fn backjump(&mut self, backjump_level: usize) -> PBState {
         assert!(backjump_level < self.decision_stack.decision_level());
-        self.integer_linear_constraint_theory.backjump(backjump_level, &self.decision_stack);
+        self.integer_linear_constraint_theory
+            .backjump(backjump_level, &self.decision_stack);
         self.count_constraint_theory
             .backjump(backjump_level, &self.decision_stack);
         self.monadic_clause_theory
             .backjump(backjump_level, &self.decision_stack);
 
-        for order in self.decision_stack.order_range(backjump_level).end..self.decision_stack.number_of_assignments() {
-            self.activities.push_unassigned_variable(self.decision_stack.get_assignment(order).index());
+        for order in self.decision_stack.order_range(backjump_level).end
+            ..self.decision_stack.number_of_assignments()
+        {
+            self.activities
+                .push_unassigned_variable(self.decision_stack.get_assignment(order).index());
         }
 
         self.decision_stack.backjump(backjump_level);

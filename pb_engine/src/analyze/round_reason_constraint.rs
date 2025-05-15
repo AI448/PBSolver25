@@ -1,12 +1,14 @@
+use ordered_float::OrderedFloat;
+
 use crate::{
-    LinearConstraintTrait, Literal, 
-     PBEngine, 
+    LinearConstraintTrait, Literal, PBEngine,
     analyze::utility::{lhs_sup_of_linear_constraint_at, normalize_linear_constraint},
     constraints::RandomAccessibleLinearConstraint,
 };
 
 use super::{
-    identify_propagation_causals::IdentifyPropagationCausals, round::Round, utility::strengthen_integer_linear_constraint, weaken::Weaken
+    identify_propagation_causals::IdentifyPropagationCausals, round::Round,
+    utility::strengthen_integer_linear_constraint, weaken::Weaken,
 };
 
 pub struct RoundReasonConstraint {
@@ -49,15 +51,16 @@ impl RoundReasonConstraint {
             |literal| {
                 (
                     // conflict_constraint に含まれるリテラルを優先
-                    if conflict_constraint.get(literal).is_some()
-                        || conflict_constraint.get(!literal).is_some()
-                    {
+                    if conflict_constraint.get(!literal).is_some() {
+                        2
+                    } else if conflict_constraint.get(literal).is_some() {
                         1
                     } else {
                         0
                     },
                     // 割り当て順が早いリテラルを優先
-                    usize::MAX - pb_engine.get_assignment_order(literal.index()),
+                    usize::MAX - pb_engine.get_assignment_order(literal.index()), // activity が大きいリテラルを優先
+                                                                                  // OrderedFloat::from(pb_engine.activity(literal.index()))
                 )
             },
             pb_engine,
@@ -68,46 +71,52 @@ impl RoundReasonConstraint {
                 .all(|literal| pb_engine.is_true(literal))
         );
 
+        // 僅かな効果がありそうだが，微妙すぎてよくわからないので一旦コメントアウト
+        // あとで再度検討
+
         // weaken
-        let weakened_reason_constraint = self.weaken.call(
-            reason_constraint,
-            move |literal| {
-                if literal == propagated_assignment || causal_assignments.contains_key(!literal) {
-                    None
-                } else {
-                    Some(0)
-                }
-            },
-            pb_engine,
-        );
-        #[cfg(debug_assertions)]
-        {
-            let propagated_coefficient = weakened_reason_constraint
-                .iter_terms()
-                .find(|&(literal, _)| literal == propagated_assignment)
-                .unwrap()
-                .1;
-            let sup_at_propagted = weakened_reason_constraint
-                .iter_terms()
-                .filter(|&(literal, _)| !causal_assignments.contains_key(!literal))
-                .map(|(_, coefficient)| coefficient)
-                .sum::<u64>();
-            debug_assert!(sup_at_propagted >= weakened_reason_constraint.lower());
-            debug_assert!(
-                sup_at_propagted < weakened_reason_constraint.lower() + propagated_coefficient
-            );
-        }
+        // let weakened_reason_constraint = self.weaken.call(
+        //     reason_constraint,
+        //     move |literal| {
+        //         if literal == propagated_assignment || causal_assignments.contains_key(!literal) {
+        //             None
+        //         } else {
+        //             Some(0)
+        //         }
+        //     },
+        //     pb_engine,
+        // );
+        // #[cfg(debug_assertions)]
+        // {
+        //     let propagated_coefficient = weakened_reason_constraint
+        //         .iter_terms()
+        //         .find(|&(literal, _)| literal == propagated_assignment)
+        //         .unwrap()
+        //         .1;
+        //     let sup_at_propagted = weakened_reason_constraint
+        //         .iter_terms()
+        //         .filter(|&(literal, _)| !causal_assignments.contains_key(!literal))
+        //         .map(|(_, coefficient)| coefficient)
+        //         .sum::<u64>();
+        //     debug_assert!(sup_at_propagted >= weakened_reason_constraint.lower());
+        //     debug_assert!(
+        //         sup_at_propagted < weakened_reason_constraint.lower() + propagated_coefficient
+        //     );
+        // }
 
         // TODO 検討
         // multiple: LinearConstraint<u64> x u64 -> LinearConstraint<u128>
         // rounding: LinearConstraint<u128> x u128 -> LinearConstraint<u128>
         // とすれば浮動小数点数を使わない実装が可能な気がする
 
-        let strengthened_wakened_reason_constraint = strengthen_integer_linear_constraint(&weakened_reason_constraint);
+        // let strengthened_wakened_reason_constraint = strengthen_integer_linear_constraint(&weakened_reason_constraint);
 
         // normalize
+        // let normalized_reason_constraint =
+        // normalize_linear_constraint(&strengthened_wakened_reason_constraint, propagated_assignment);
         let normalized_reason_constraint =
-            normalize_linear_constraint(&strengthened_wakened_reason_constraint, propagated_assignment);
+            normalize_linear_constraint(&reason_constraint, propagated_assignment);
+
         #[cfg(debug_assertions)]
         {
             debug_assert!(
@@ -126,7 +135,9 @@ impl RoundReasonConstraint {
             debug_assert!(
                 sup_at_propaged
                     < normalized_reason_constraint.lower() + 1.0 - self.integrality_tolerance,
-                "{} {}", sup_at_propaged, normalized_reason_constraint.lower()
+                "{} {}",
+                sup_at_propaged,
+                normalized_reason_constraint.lower()
             );
         }
 

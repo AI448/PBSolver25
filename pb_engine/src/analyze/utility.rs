@@ -1,12 +1,9 @@
-use std::ops::AddAssign;
-use std::cmp::min;
 use either::Either;
 use num::{Num, Unsigned};
+use std::cmp::min;
+use std::ops::AddAssign;
 
-use crate::{
-      LinearConstraintTrait, LinearConstraintView,
-    Literal,  PBEngine,
-};
+use crate::{LinearConstraintTrait, LinearConstraintView, Literal, PBEngine};
 
 pub fn drop_fixed_variable(
     constraint: &impl LinearConstraintTrait<Value = u64>,
@@ -93,29 +90,30 @@ pub fn strengthen_integer_linear_constraint(
         ));
     } else {
         let gcd = calculate_gcd(
-            constraint.iter_terms().map(|(_, coefficient)| min(coefficient, lower))
+            constraint
+                .iter_terms()
+                .map(|(_, coefficient)| min(coefficient, lower)),
         );
         return Either::Right(LinearConstraintView::new(
-            constraint.iter_terms().filter_map(
-                move |(literal, coefficient)|
-                if coefficient != 0 {
-                    debug_assert!(min(coefficient, lower) % gcd == 0);
-                    Some((literal, min(coefficient, lower) / gcd))
-                } else {
-                    None
-                }
-            ),
+            constraint
+                .iter_terms()
+                .filter_map(move |(literal, coefficient)| {
+                    if coefficient != 0 {
+                        debug_assert!(min(coefficient, lower) % gcd == 0);
+                        Some((literal, min(coefficient, lower) / gcd))
+                    } else {
+                        None
+                    }
+                }),
             constraint.lower().div_ceil(gcd),
         ));
     }
 }
 
-
 pub fn calculate_gcd<ValueT>(values: impl Iterator<Item = ValueT>) -> ValueT
 where
-    ValueT: Unsigned + Ord + Copy
+    ValueT: Unsigned + Ord + Copy,
 {
-
     let mut x = ValueT::zero();
     for y in values {
         if x.is_one() {
@@ -128,7 +126,7 @@ where
 
 pub fn gcd<ValueT>(mut x: ValueT, mut y: ValueT) -> ValueT
 where
-    ValueT: Unsigned + Ord + Copy
+    ValueT: Unsigned + Ord + Copy,
 {
     if x > y {
         let z = x;
@@ -145,5 +143,4 @@ where
         y = x;
         x = z;
     }
-
 }

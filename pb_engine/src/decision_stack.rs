@@ -79,7 +79,7 @@ where
             return self.is_true(literal);
         } else {
             return self.states[literal.index()].order <= order
-            && self.states[literal.index()].value == literal.value();
+                && self.states[literal.index()].value == literal.value();
         }
     }
 

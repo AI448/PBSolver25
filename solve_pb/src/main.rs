@@ -1,7 +1,9 @@
 use std::{io::BufReader, usize};
 
 use pb_engine::{
-    strengthen_integer_linear_constraint, Analyze, AnalyzeResult, Boolean, CountConstraintView, LinearConstraintTrait, LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine, PBState
+    Analyze, AnalyzeResult, Boolean, CountConstraintView, LinearConstraintTrait,
+    LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine, PBState,
+    strengthen_integer_linear_constraint,
 };
 use read_opb::{PBProblem, RelationalOperator, read_opb};
 
@@ -35,7 +37,19 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
     let mut pb_engine = PBEngine::new(1e2);
 
-    let max_index = pb_problem.constraints.iter().map(|constraint| constraint.sum.iter().map(|weighted_term| weighted_term.term.index).max().unwrap_or(0)).max().unwrap_or(0);
+    let max_index = pb_problem
+        .constraints
+        .iter()
+        .map(|constraint| {
+            constraint
+                .sum
+                .iter()
+                .map(|weighted_term| weighted_term.term.index)
+                .max()
+                .unwrap_or(0)
+        })
+        .max()
+        .unwrap_or(0);
 
     eprintln!("number_of_variables={}", max_index);
 
@@ -139,15 +153,16 @@ fn solve(pb_problem: &PBProblem) -> Status {
     let mut restart_count: usize = 0;
     let mut previous_restart_timestamp = 0;
 
-    eprintln!("{:9} {:9} {:9} {:9} {:9}",
-        restart_count, conflict_count,
+    eprintln!(
+        "{:9} {:9} {:9} {:9} {:9}",
+        restart_count,
+        conflict_count,
         pb_engine.number_of_monadic_clauses(),
         pb_engine.number_of_count_constraints(),
         pb_engine.number_of_integer_linear_constraints()
     );
 
     loop {
-
         if start_time.elapsed() > std::time::Duration::from_secs(60) {
             return Status::Indefinite;
         }
@@ -162,8 +177,10 @@ fn solve(pb_problem: &PBProblem) -> Status {
         {
             conflict_count += 1;
 
-            eprintln!("{:9} {:9} {:9} {:9} {:9}",
-                restart_count, conflict_count,
+            eprintln!(
+                "{:9} {:9} {:9} {:9} {:9}",
+                restart_count,
+                conflict_count,
                 pb_engine.number_of_monadic_clauses(),
                 pb_engine.number_of_count_constraints(),
                 pb_engine.number_of_integer_linear_constraints()

@@ -165,9 +165,13 @@ where
         }
         assert!(sup >= lower);
         // TODO Err を返す
-        assert!(decision_stack.decision_level() == 0 || sup_at_previous_decision_level >= lower + max_unassigned_coefficient,
+        assert!(
+            decision_stack.decision_level() == 0
+                || sup_at_previous_decision_level >= lower + max_unassigned_coefficient,
             "{} {} {}",
-            sup_at_previous_decision_level, lower, max_unassigned_coefficient
+            sup_at_previous_decision_level,
+            lower,
+            max_unassigned_coefficient
         );
 
         // 制約条件を追加
