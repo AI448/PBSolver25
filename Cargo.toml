@@ -1,0 +1,13 @@
+[workspace]
+edition = "2024"
+resolver = "3"
+
+members = [
+    "utility",
+    "pb_engine",
+    "solve_pb"
+]
+
+[profile.dev]
+opt-level = 3
+lto = true

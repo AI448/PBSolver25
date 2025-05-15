@@ -1,0 +1,9 @@
+[package]
+name = "solve_pb"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nom = {package = "nom", version = "8.0.0"}
+num = {package = "num", version = "0.4.3"}
+pb_engine = {path="../pb_engine"}
