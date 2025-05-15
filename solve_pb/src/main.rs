@@ -1,9 +1,7 @@
 use std::{io::BufReader, usize};
 
 use pb_engine::{
-    Analyze, AnalyzeResult, Boolean, CountConstraintView,
-    LinearConstraintTrait, LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine,
-    PBState,
+    strengthen_integer_linear_constraint, Analyze, AnalyzeResult, Boolean, CountConstraintView, LinearConstraintTrait, LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine, PBState
 };
 use read_opb::{PBProblem, RelationalOperator, read_opb};
 
@@ -135,7 +133,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
     eprintln!("   RESTART CONFLICT   #LINEAR    #COUNT  #MONADIC");
 
-    let mut analyzer = Analyze::new(1e-7);
+    let mut analyzer = Analyze::new(1e-8);
 
     let mut conflict_count: usize = 0;
     let mut restart_count: usize = 0;
@@ -235,7 +233,7 @@ fn add_integer_linear_constraint(
     if integer_linear_constraint.lower() == 0 {
         return;
     }
-
+    let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
     pb_engine.add_constraint(if integer_linear_constraint.len() == 1 {
         PBConstraint::MonadicClause(MonadicClause {
             literal: integer_linear_constraint.iter_terms().next().unwrap().0,

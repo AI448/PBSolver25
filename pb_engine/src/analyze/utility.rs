@@ -1,7 +1,7 @@
 use std::ops::AddAssign;
-
+use std::cmp::min;
 use either::Either;
-use num::Num;
+use num::{Num, Unsigned};
 
 use crate::{
       LinearConstraintTrait, LinearConstraintView,
@@ -92,11 +92,58 @@ pub fn strengthen_integer_linear_constraint(
             1,
         ));
     } else {
-        // TODO: coefficient = min(coefficient, lower)
-        // TODO: calculate GCD
+        let gcd = calculate_gcd(
+            constraint.iter_terms().map(|(_, coefficient)| min(coefficient, lower))
+        );
         return Either::Right(LinearConstraintView::new(
-            constraint.iter_terms(),
-            constraint.lower(),
+            constraint.iter_terms().filter_map(
+                move |(literal, coefficient)|
+                if coefficient != 0 {
+                    debug_assert!(min(coefficient, lower) % gcd == 0);
+                    Some((literal, min(coefficient, lower) / gcd))
+                } else {
+                    None
+                }
+            ),
+            constraint.lower().div_ceil(gcd),
         ));
     }
+}
+
+
+pub fn calculate_gcd<ValueT>(values: impl Iterator<Item = ValueT>) -> ValueT
+where
+    ValueT: Unsigned + Ord + Copy
+{
+
+    let mut x = ValueT::zero();
+    for y in values {
+        if x.is_one() {
+            break;
+        }
+        x = gcd(x, y);
+    }
+    return x;
+}
+
+pub fn gcd<ValueT>(mut x: ValueT, mut y: ValueT) -> ValueT
+where
+    ValueT: Unsigned + Ord + Copy
+{
+    if x > y {
+        let z = x;
+        x = y;
+        y = z;
+    }
+
+    loop {
+        debug_assert!(x <= y);
+        if x.is_zero() {
+            return y;
+        }
+        let z = y % x;
+        y = x;
+        x = z;
+    }
+
 }

@@ -192,3 +192,5 @@ impl Analyze {
         }
     }
 }
+
+pub use utility::strengthen_integer_linear_constraint;

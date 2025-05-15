@@ -11,7 +11,7 @@ mod engine;
 mod theories;
 mod types;
 
-pub use analyze::{Analyze, AnalyzeResult};
+pub use analyze::{Analyze, AnalyzeResult, strengthen_integer_linear_constraint};
 pub use constraints::{
     CountConstraint, CountConstraintTrait, CountConstraintView, LinearConstraint,
     LinearConstraintTrait, LinearConstraintView, MonadicClause,

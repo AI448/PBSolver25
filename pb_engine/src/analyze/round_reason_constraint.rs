@@ -6,9 +6,7 @@ use crate::{
 };
 
 use super::{
-    identify_propagation_causals::IdentifyPropagationCausals,
-    round::Round,
-    weaken::Weaken,
+    identify_propagation_causals::IdentifyPropagationCausals, round::Round, utility::strengthen_integer_linear_constraint, weaken::Weaken
 };
 
 pub struct RoundReasonConstraint {
@@ -105,9 +103,11 @@ impl RoundReasonConstraint {
         // rounding: LinearConstraint<u128> x u128 -> LinearConstraint<u128>
         // とすれば浮動小数点数を使わない実装が可能な気がする
 
+        let strengthened_wakened_reason_constraint = strengthen_integer_linear_constraint(&weakened_reason_constraint);
+
         // normalize
         let normalized_reason_constraint =
-            normalize_linear_constraint(&weakened_reason_constraint, propagated_assignment);
+            normalize_linear_constraint(&strengthened_wakened_reason_constraint, propagated_assignment);
         #[cfg(debug_assertions)]
         {
             debug_assert!(

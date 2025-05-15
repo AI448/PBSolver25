@@ -1,6 +1,5 @@
 use crate::{
-    LinearConstraintTrait, Literal, 
-    PBEngine, constraints::RandomAccessibleLinearConstraint,
+    analyze::utility::strengthen_integer_linear_constraint, constraints::RandomAccessibleLinearConstraint, LinearConstraintTrait, Literal, PBEngine
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
@@ -46,11 +45,9 @@ impl Resolve {
             engine,
         );
 
-        // TODO: strengthen
-
         self.conflict_constraint
             .add_assign(&self.round_reason_constraint.get().mul(conflict_coefficient));
 
-        return &self.conflict_constraint;
+        return strengthen_integer_linear_constraint(&self.conflict_constraint);
     }
 }
