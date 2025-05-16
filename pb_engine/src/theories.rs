@@ -8,6 +8,7 @@ mod monadic_clause_theory;
 pub struct Propagation<ExplainKey: Copy> {
     pub literal: Literal,
     pub explain_key: ExplainKey,
+    pub plbd: usize,
 }
 
 pub trait TheoryTrait {

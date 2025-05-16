@@ -1,6 +1,6 @@
 use crate::{
-    Literal, collections::LiteralArray, constraints::CountConstraintTrait,
-    decision_stack::DecisionStack, theories::Propagation,
+    Literal, calculate_plbd::CalculatePLBD, collections::LiteralArray,
+    constraints::CountConstraintTrait, decision_stack::DecisionStack, theories::Propagation,
 };
 
 use super::{TheoryAddConstraintTrait, TheoryTrait};
@@ -12,6 +12,7 @@ pub struct CountConstraintExplainKey {
 
 #[derive(Clone)]
 pub struct CountConstraintTheory {
+    calculate_plbd: CalculatePLBD,
     watching_rows: LiteralArray<Vec<Watch>>,
     rows: Vec<Row>,
     number_of_evaluated_assignments: usize,
@@ -20,6 +21,7 @@ pub struct CountConstraintTheory {
 impl CountConstraintTheory {
     pub fn new() -> Self {
         Self {
+            calculate_plbd: CalculatePLBD::default(),
             watching_rows: LiteralArray::default(),
             rows: Vec::default(),
             number_of_evaluated_assignments: 0,
@@ -70,6 +72,15 @@ impl TheoryTrait for CountConstraintTheory {
                 }
             }
 
+            let plbd = self.calculate_plbd.calculate(
+                [assigned_literal].into_iter().chain(
+                    row.literals[row.number_of_watching_literals..]
+                        .iter()
+                        .map(|&literal| !literal),
+                ),
+                decision_stack,
+            );
+
             for &literal in row.literals[..row.number_of_watching_literals].iter() {
                 debug_assert!(literal == !assigned_literal || !decision_stack.is_false(literal));
                 if !decision_stack.is_assigned(literal.index()) {
@@ -78,6 +89,7 @@ impl TheoryTrait for CountConstraintTheory {
                         explain_key: Self::ExplainKey {
                             row_id: watch.row_id,
                         },
+                        plbd,
                     });
                 }
             }
@@ -106,7 +118,7 @@ where
     fn add_constraint<ExplainKeyT: Copy>(
         &mut self,
         constraint: CountConstraintT,
-        assignment_state: &DecisionStack<ExplainKeyT>,
+        decision_stack: &DecisionStack<ExplainKeyT>,
         mut callback: impl FnMut(Propagation<Self::ExplainKey>),
     ) -> Result<(), usize> {
         if constraint.lower() == 0 {
@@ -123,7 +135,7 @@ where
                 let mut i = 0;
                 for j in 0..literals.len() {
                     let literal = literals[j];
-                    if !assignment_state.is_false(literal) {
+                    if !decision_stack.is_false(literal) {
                         if i != j {
                             literals.swap(i, j);
                         }
@@ -132,19 +144,19 @@ where
                 }
             }
             // TODO 後で考える
-            assert!(!assignment_state.is_false(literals[number_of_watching_literals - 2]));
+            assert!(!decision_stack.is_false(literals[number_of_watching_literals - 2]));
 
             // 伝播が発生する状態である場合には，最後に False が割り当てられたリテラルを監視範囲の末尾に移動する
-            // TODO: lower == len である制約条件が与えられるケースに対応
-            if assignment_state.is_false(literals[number_of_watching_literals - 1]) {
+
+            if decision_stack.is_false(literals[number_of_watching_literals - 1]) {
                 // 最後に割り当てられたリテラルの位置を取得
                 let p = ((number_of_watching_literals - 1)..literals.len())
-                    .max_by_key(|&p| assignment_state.get_assignment_order(literals[p].index()))
+                    .max_by_key(|&p| decision_stack.get_assignment_order(literals[p].index()))
                     .unwrap();
 
                 // 伝播が発生する決定レベルを確認
-                let propagation_level = assignment_state.get_decision_level(literals[p].index());
-                if propagation_level < assignment_state.decision_level() {
+                let propagation_level = decision_stack.get_decision_level(literals[p].index());
+                if propagation_level < decision_stack.decision_level() {
                     // 現在の決定レベルより前に伝播が発生するならエラー
                     return Err(propagation_level);
                 }
@@ -171,20 +183,28 @@ where
             }
 
             // 伝播
-            if assignment_state.is_false(row.literals[number_of_watching_literals - 1]) {
+            if decision_stack.is_false(row.literals[number_of_watching_literals - 1]) {
+                let plbd = self.calculate_plbd.calculate(
+                    row.literals[(row.number_of_watching_literals - 1)..]
+                        .iter()
+                        .map(|&literal| !literal),
+                    decision_stack,
+                );
+
                 for &literal in row.literals[..row.number_of_watching_literals - 1].iter() {
-                    debug_assert!(!assignment_state.is_false(literal));
-                    if !assignment_state.is_assigned(literal.index()) {
+                    debug_assert!(!decision_stack.is_false(literal));
+                    if !decision_stack.is_assigned(literal.index()) {
                         callback(Propagation {
                             literal,
                             explain_key: Self::ExplainKey { row_id },
+                            plbd,
                         });
                     }
                 }
             }
         } else {
             assert!((constraint.lower() as usize) == constraint.len());
-            assert!(assignment_state.decision_level() == 0);
+            assert!(decision_stack.decision_level() == 0);
 
             let row_id = self.rows.len();
             self.rows.push(Row {
@@ -195,11 +215,12 @@ where
             // let row = self.rows.last_mut().unwrap();
 
             for literal in constraint.iter_terms() {
-                debug_assert!(!assignment_state.is_false(literal));
-                if !assignment_state.is_assigned(literal.index()) {
+                debug_assert!(!decision_stack.is_false(literal));
+                if !decision_stack.is_assigned(literal.index()) {
                     callback(Propagation {
                         literal,
                         explain_key: Self::ExplainKey { row_id },
+                        plbd: 0,
                     });
                 }
             }

@@ -40,14 +40,10 @@ impl FlattenConflictConstraint {
         let (causals, _) = self.identify_causals.call(
             &conflict_constraint,
             conflict_order,
-            |literal, coefficient| {
-                // (
-                // 係数が大きいものを優先
-                // coefficient,
+            |literal, _| {
                 // 割り当て順序が早いものを優先
-                Reverse(engine.get_assignment_order(literal.index()))
-                // OrderedFloat::from(engine.activity(literal.index()))
-                // )
+                // Reverse(engine.get_assignment_order(literal.index()))
+                OrderedFloat::from(engine.activity(literal.index()))
             },
             engine,
         );

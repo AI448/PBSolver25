@@ -2,8 +2,8 @@ use std::cmp::max;
 
 use super::{Propagation, TheoryAddConstraintTrait, TheoryTrait};
 use crate::{
-    Literal, collections::LiteralArray, constraints::LinearConstraintTrait,
-    decision_stack::DecisionStack,
+    Literal, calculate_plbd::CalculatePLBD, collections::LiteralArray,
+    constraints::LinearConstraintTrait, decision_stack::DecisionStack,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -13,6 +13,7 @@ pub struct IntegerLinearConstraintExplainKey {
 
 #[derive(Clone)]
 pub struct IntegerLinearConstraintTheory {
+    calculate_plbd: CalculatePLBD,
     rows: Vec<Row>,
     columns: LiteralArray<Column>,
     number_of_evaluated_assignments: usize,
@@ -21,6 +22,7 @@ pub struct IntegerLinearConstraintTheory {
 impl IntegerLinearConstraintTheory {
     pub fn new() -> Self {
         Self {
+            calculate_plbd: CalculatePLBD::default(),
             rows: Vec::default(),
             columns: LiteralArray::default(),
             number_of_evaluated_assignments: 0,
@@ -72,6 +74,17 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
                 }
                 k += 1;
             }
+            // 伝播が発生する可能性がなければ continue
+            if row.sup >= row.lower + row.max_unassigned_coefficient {
+                continue;
+            }
+            let plbd = self.calculate_plbd.calculate(
+                row.terms
+                    .iter()
+                    .map(|&(literal, _)| !literal)
+                    .filter(|&literal| decision_stack.is_true(literal)),
+                decision_stack,
+            );
             // 伝播
             while k < row.terms.len() {
                 let (literal, coefficient) = row.terms[k];
@@ -84,6 +97,7 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
                     callback(Propagation {
                         literal,
                         explain_key: IntegerLinearConstraintExplainKey { row_id },
+                        plbd,
                     });
                 }
                 k += 1;
@@ -191,6 +205,13 @@ where
 
         // 追加した制約条件による伝播を実行
         if sup < lower + max_unassigned_coefficient {
+            let plbd = self.calculate_plbd.calculate(
+                row.terms
+                    .iter()
+                    .map(|&(literal, _)| !literal)
+                    .filter(|&literal| decision_stack.is_true(literal)),
+                decision_stack,
+            );
             for &(literal, coefficient) in row.terms.iter() {
                 // 伝播が発生しない場合には break
                 if row.sup >= row.lower + coefficient {
@@ -201,6 +222,7 @@ where
                     callback(Propagation {
                         literal,
                         explain_key: IntegerLinearConstraintExplainKey { row_id },
+                        plbd,
                     });
                 }
             }

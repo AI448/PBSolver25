@@ -49,19 +49,20 @@ impl RoundReasonConstraint {
             reason_constraint,
             propagated_assignment,
             |literal| {
-                (
+                // (
                     // conflict_constraint に含まれるリテラルを優先
-                    if conflict_constraint.get(!literal).is_some() {
-                        2
-                    } else if conflict_constraint.get(literal).is_some() {
-                        1
-                    } else {
-                        0
-                    },
+                    // if conflict_constraint.get(!literal).is_some() {
+                    //     1
+                    // } else if conflict_constraint.get(literal).is_some() {
+                    //     2
+                    // } else {
+                    //     0
+                    // },
                     // 割り当て順が早いリテラルを優先
-                    usize::MAX - pb_engine.get_assignment_order(literal.index()), // activity が大きいリテラルを優先
-                                                                                  // OrderedFloat::from(pb_engine.activity(literal.index()))
-                )
+                    // usize::MAX - pb_engine.get_assignment_order(literal.index()),
+                    // アクティビティが大きいものを優先
+                    OrderedFloat::from(pb_engine.activity(literal.index()))
+                // )
             },
             pb_engine,
         );

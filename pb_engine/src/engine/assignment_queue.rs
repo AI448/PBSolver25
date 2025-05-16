@@ -11,8 +11,8 @@ pub struct AssignmentQueue<ExplainKeyT>
 where
     ExplainKeyT: Copy,
 {
-    conflict_queue: HeapedMap<Conflict<ExplainKeyT, usize>, ConflictComparator>,
-    assignment_queue: HeapedMap<Assignment<ExplainKeyT, usize>, AssignmentComparator>,
+    conflict_queue: HeapedMap<Conflict<ExplainKeyT, f64>, ConflictComparator>,
+    assignment_queue: HeapedMap<Assignment<ExplainKeyT, f64>, AssignmentComparator>,
 }
 
 impl<ExplainKeyT> Default for AssignmentQueue<ExplainKeyT>
@@ -35,8 +35,22 @@ where
         return self.conflict_queue.is_empty() && self.assignment_queue.is_empty();
     }
 
-    pub fn push(&mut self, literal: Literal, reason: Reason<ExplainKeyT>, priority: usize) {
-        if self.conflict_queue.is_empty() {
+    pub fn push(
+        &mut self,
+        literal: Literal,
+        reason: Reason<ExplainKeyT>,
+        priority: f64,
+        plbd: usize,
+    ) {
+        if self.conflict_queue.contains_key(literal.index()) {
+            let conflict = self.conflict_queue.get(literal.index()).unwrap();
+            if plbd < conflict.plbds[literal.value()] {
+                let mut conflict = conflict.clone();
+                conflict.reasons[literal.value()] = reason;
+                conflict.plbds[literal.value()] = plbd;
+                self.conflict_queue.insert(literal.index(), conflict);
+            }
+        } else {
             if !self.assignment_queue.contains_key(literal.index()) {
                 self.assignment_queue.insert(
                     literal.index(),
@@ -44,18 +58,21 @@ where
                         value: literal.value(),
                         reason,
                         priority,
+                        plbd,
                     },
                 );
             } else {
                 let assignment = self.assignment_queue.get(literal.index()).unwrap();
                 if assignment.value == literal.value() {
-                    if priority > assignment.priority {
+                    debug_assert!(assignment.priority == priority);
+                    if plbd < assignment.plbd {
                         self.assignment_queue.insert(
                             literal.index(),
                             Assignment {
                                 value: literal.value(),
                                 reason,
                                 priority,
+                                plbd,
                             },
                         );
                     }
@@ -65,20 +82,21 @@ where
                     } else {
                         [assignment.reason, reason]
                     };
+                    let plbds = if literal.value() == Boolean::FALSE {
+                        [plbd, assignment.plbd]
+                    } else {
+                        [assignment.plbd, plbd]
+                    };
                     self.conflict_queue.insert(
                         literal.index(),
                         Conflict {
                             reasons,
-                            priority: 0,
+                            plbds,
+                            priority,
                         },
                     );
                     self.assignment_queue.remove(literal.index());
                 }
-            }
-        } else {
-            if self.conflict_queue.contains_key(literal.index()) {
-                // TODO: priority が増加するなら更新
-                // let conflict = self.conflict_queue.get(literal.index()).unwrap();
             }
         }
     }
@@ -115,6 +133,7 @@ where
 {
     value: Boolean,
     reason: Reason<ExplainKeyT>,
+    plbd: usize,
     priority: PriorityT,
 }
 
@@ -125,6 +144,7 @@ where
     PriorityT: PartialOrd,
 {
     reasons: [Reason<ExplainKeyT>; 2],
+    plbds: [usize; 2],
     priority: PriorityT,
 }
 

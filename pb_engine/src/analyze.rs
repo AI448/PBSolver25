@@ -66,8 +66,8 @@ impl Analyze {
     > {
         self.conflicting_assignments.clear();
         // TODO: 意味があるのか確認
-        // self.conflicting_assignments
-        //     .insert(Literal::new(conflict_variable, Boolean::FALSE));
+        self.conflicting_assignments
+            .insert(Literal::new(conflict_variable, Boolean::FALSE));
         // self.conflicting_assignments
         //     .insert(Literal::new(conflict_variable, Boolean::TRUE));
 

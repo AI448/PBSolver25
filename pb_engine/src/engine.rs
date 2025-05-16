@@ -202,7 +202,8 @@ impl PBEngine {
                             Reason::Propagation {
                                 explain_key: propagation.explain_key.into(),
                             },
-                            0,
+                            self.activities.activity(propagation.literal.index()),
+                            propagation.plbd,
                         );
                     })
                     .unwrap();
@@ -215,7 +216,8 @@ impl PBEngine {
                             Reason::Propagation {
                                 explain_key: propagation.explain_key.into(),
                             },
-                            0,
+                            self.activities.activity(propagation.literal.index()),
+                            propagation.plbd,
                         );
                     })
                     .unwrap();
@@ -228,7 +230,8 @@ impl PBEngine {
                             Reason::Propagation {
                                 explain_key: propagation.explain_key.into(),
                             },
-                            0,
+                            self.activities.activity(propagation.literal.index()),
+                            propagation.plbd,
                         )
                     })
                     .unwrap();
@@ -263,7 +266,8 @@ impl PBEngine {
         self.assignment_queue.push(
             Literal::new(decision_variable, decision_value),
             Reason::Decision,
-            1,
+            f64::INFINITY,
+            0,
         );
         // self.propagate();
         // return self.state();
@@ -340,7 +344,8 @@ impl PBEngine {
                         Reason::Propagation {
                             explain_key: propagation.explain_key.into(),
                         },
-                        0,
+                        self.activities.activity(propagation.literal.index()),
+                        propagation.plbd,
                     );
                 });
             self.count_constraint_theory
@@ -350,7 +355,8 @@ impl PBEngine {
                         Reason::Propagation {
                             explain_key: propagation.explain_key.into(),
                         },
-                        0,
+                        self.activities.activity(propagation.literal.index()),
+                        propagation.plbd,
                     );
                 });
             self.integer_linear_constraint_theory
@@ -360,7 +366,8 @@ impl PBEngine {
                         Reason::Propagation {
                             explain_key: propagation.explain_key.into(),
                         },
-                        0,
+                        self.activities.activity(propagation.literal.index()),
+                        propagation.plbd,
                     )
                 });
         }

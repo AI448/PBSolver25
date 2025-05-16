@@ -35,7 +35,7 @@ fn main() {
 fn solve(pb_problem: &PBProblem) -> Status {
     let start_time = std::time::Instant::now();
 
-    let mut pb_engine = PBEngine::new(1e2);
+    let mut pb_engine = PBEngine::new(100.0);
 
     let max_index = pb_problem
         .constraints

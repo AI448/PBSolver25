@@ -78,6 +78,7 @@ impl TheoryAddConstraintTrait<MonadicClause> for MonadicClauseTheory {
                 explain_key: MonadicClauseExplainKey {
                     monadic_clause: constraint,
                 },
+                plbd: 0,
             });
             return Ok(());
         }
