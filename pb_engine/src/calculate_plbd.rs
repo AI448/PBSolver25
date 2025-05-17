@@ -24,8 +24,10 @@ impl CalculatePLBD {
         self.decision_level_set.clear();
         for assignment in assignments {
             debug_assert!(decision_stack.is_true(assignment));
-            self.decision_level_set
-                .insert(decision_stack.get_decision_level(assignment.index()));
+            let decision_level = decision_stack.get_decision_level(assignment.index());
+            if decision_level != 0 {
+                self.decision_level_set.insert(decision_level);
+            }
         }
         return self.decision_level_set.len();
     }
