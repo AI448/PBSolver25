@@ -241,13 +241,6 @@ where
         }
     }
 
-    pub fn mul_add_assign(
-        &mut self,
-        constraint: &impl LinearConstraintTrait<Value = ValueT>,
-        multipler: ValueT,
-    ) {
-    }
-
     // fn strengthen(&mut self) {
     //     // lower を超える係数を lower まで減少
     //     for (_, term) in self.terms.iter_mut() {

@@ -1,13 +1,17 @@
+#![feature(float_erf)]
+
+mod plbd_watcher;
+mod read_opb;
+
 use std::{io::BufReader, usize};
 
 use pb_engine::{
-    Analyze, AnalyzeResult, Boolean, CountConstraintView, LinearConstraintTrait,
+    Analyze, AnalyzeResult, Boolean, CalculatePLBD, CountConstraintView, LinearConstraintTrait,
     LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine, PBState,
     strengthen_integer_linear_constraint,
 };
+use plbd_watcher::PLBDWatcher;
 use read_opb::{PBProblem, RelationalOperator, read_opb};
-
-mod read_opb;
 
 enum Status {
     Satisfiable,
@@ -145,18 +149,22 @@ fn solve(pb_problem: &PBProblem) -> Status {
         }
     }
 
-    eprintln!("   RESTART CONFLICT   #LINEAR    #COUNT  #MONADIC");
+    eprintln!("   RESTART CONFLICT     CLEVEL      PLBD  #MONADIC    #COUNT   #LINEAR");
 
+    let mut plbd_watcher = PLBDWatcher::new(10, 1000);
     let mut analyzer = Analyze::new(1e-8);
+    let mut calculate_plbd = CalculatePLBD::default();
 
     let mut conflict_count: usize = 0;
     let mut restart_count: usize = 0;
     let mut previous_restart_timestamp = 0;
 
     eprintln!(
-        "{:9} {:9} {:9} {:9} {:9}",
+        "{:9} {:9} {:9} {:9} {:9} {:9} {:9}",
         restart_count,
         conflict_count,
+        "",
+        "",
         pb_engine.number_of_monadic_clauses(),
         pb_engine.number_of_count_constraints(),
         pb_engine.number_of_integer_linear_constraints()
@@ -177,15 +185,6 @@ fn solve(pb_problem: &PBProblem) -> Status {
         {
             conflict_count += 1;
 
-            eprintln!(
-                "{:9} {:9} {:9} {:9} {:9}",
-                restart_count,
-                conflict_count,
-                pb_engine.number_of_monadic_clauses(),
-                pb_engine.number_of_count_constraints(),
-                pb_engine.number_of_integer_linear_constraints()
-            );
-
             if pb_engine.decision_level() == 0 {
                 return Status::Unsatisfiable;
             }
@@ -204,11 +203,35 @@ fn solve(pb_problem: &PBProblem) -> Status {
                 return Status::Unsatisfiable;
             };
 
+            let plbd = calculate_plbd.calculate(
+                learnt_constraint
+                    .iter_terms()
+                    .map(|(literal, _)| !literal)
+                    .filter(|&literal| pb_engine.is_true(literal)),
+                &pb_engine,
+            );
+            plbd_watcher.add(plbd);
+            // eprintln!("plbd={} long_term_mean={}, long_term_variance={}, short_term_mean={}, p={}", plbd, plbd_watcher.long_term_average.mean(), plbd_watcher.long_term_average.variance(), plbd_watcher.short_term_average.mean(), plbd_watcher.lower_tail_probability());
+
             pb_engine.update_conflict_probabilities(conflicting_assignments);
+
+            let conflict_level = pb_engine.decision_level();
 
             pb_engine.backjump(backjump_level);
 
             add_integer_linear_constraint(&mut pb_engine, &learnt_constraint);
+
+            eprintln!(
+                "{:9} {:9} {:9} {:9} {:9} {:9} {:9}",
+                restart_count,
+                conflict_count,
+                conflict_level,
+                plbd,
+                pb_engine.number_of_monadic_clauses(),
+                pb_engine.number_of_count_constraints(),
+                pb_engine.number_of_integer_linear_constraints()
+            );
+            eprintln!("{}", plbd_watcher.lower_tail_probability());
         } else if pb_engine.number_of_assignments() == pb_engine.number_of_variables() {
             for constraint in pb_problem.constraints.iter() {
                 let mut lhs = 0;
@@ -228,7 +251,9 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             return Status::Satisfiable;
-        } else if conflict_count > previous_restart_timestamp + 100 {
+        } else if conflict_count >= previous_restart_timestamp + 10
+            && plbd_watcher.lower_tail_probability() > 0.9
+        {
             restart_count += 1;
             previous_restart_timestamp = conflict_count;
 

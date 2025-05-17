@@ -116,12 +116,12 @@ impl Analyze {
                     conflict_order,
                     engine,
                 );
-                eprintln!(
-                    "sup={}, lower={}, len={}",
-                    sup,
-                    self.conflict_constraint.lower(),
-                    self.conflict_constraint.len()
-                );
+                // eprintln!(
+                //     "sup={}, lower={}, len={}",
+                //     sup,
+                //     self.conflict_constraint.lower(),
+                //     self.conflict_constraint.len()
+                // );
                 debug_assert!(sup < self.conflict_constraint.lower());
             }
 
