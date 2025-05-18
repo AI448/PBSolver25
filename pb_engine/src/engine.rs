@@ -15,7 +15,7 @@ use crate::{
 use activities::Activities;
 use assignment_queue::AssignmentQueue;
 use either::Either;
-use std::{env::var, ops::Deref};
+use std::ops::Deref;
 
 pub use reason::Reason;
 
@@ -185,69 +185,63 @@ impl PBEngine {
         self.integer_linear_constraint_theory.add_variable();
     }
 
-    pub fn add_constraint(
-        &mut self,
-        constraint: PBConstraint<
-            impl CountConstraintTrait,
-            impl LinearConstraintTrait<Value = u64>,
-        >,
-    ) {
-        assert!(self.state.is_noconflict()); // TODO: あとで他の状態にも対応する
-        match constraint {
-            PBConstraint::MonadicClause(constraint) => {
-                self.monadic_clause_theory
-                    .add_constraint(constraint, &self.decision_stack, |propagation| {
-                        self.assignment_queue.push(
-                            propagation.literal,
-                            Reason::Propagation {
-                                explain_key: propagation.explain_key.into(),
-                            },
-                            self.activities.activity(propagation.literal.index()),
-                            propagation.plbd,
-                        );
-                    })
-                    .unwrap();
-            }
-            PBConstraint::CountConstraint(constraint) => {
-                self.count_constraint_theory
-                    .add_constraint(constraint, &self.decision_stack, |propagation| {
-                        self.assignment_queue.push(
-                            propagation.literal,
-                            Reason::Propagation {
-                                explain_key: propagation.explain_key.into(),
-                            },
-                            self.activities.activity(propagation.literal.index()),
-                            propagation.plbd,
-                        );
-                    })
-                    .unwrap();
-            }
-            PBConstraint::IntegerLinearConstraint(constraint) => {
-                self.integer_linear_constraint_theory
-                    .add_constraint(constraint, &self.decision_stack, |propagation| {
-                        self.assignment_queue.push(
-                            propagation.literal,
-                            Reason::Propagation {
-                                explain_key: propagation.explain_key.into(),
-                            },
-                            self.activities.activity(propagation.literal.index()),
-                            propagation.plbd,
-                        )
-                    })
-                    .unwrap();
-            }
-        }
-        // self.propagate();
-        // return self.state();
+    pub fn add_monadic_clause(&mut self, monadic_clause: MonadicClause) {
+        Self::add_constraint_to(
+            &mut self.monadic_clause_theory,
+            monadic_clause,
+            &self.decision_stack,
+            &mut self.assignment_queue,
+            &self.activities,
+        );
     }
 
-    // pub fn decide(&mut self, literal: Literal) {
-    //     assert!(self.state.is_noconflict());
-    //     debug_assert!(self.assignment_queue.is_empty());
-    //     self.assignment_queue.push(literal, Reason::Decision, 1);
-    //     // self.propagate();
-    //     // return self.state();
-    // }
+    pub fn add_count_constraint(&mut self, count_constraint: impl CountConstraintTrait) {
+        Self::add_constraint_to(
+            &mut self.count_constraint_theory,
+            count_constraint,
+            &self.decision_stack,
+            &mut self.assignment_queue,
+            &self.activities,
+        );
+    }
+
+    pub fn add_integer_linear_constraint(
+        &mut self,
+        constraint: impl LinearConstraintTrait<Value = u64>,
+    ) {
+        Self::add_constraint_to(
+            &mut self.integer_linear_constraint_theory,
+            constraint,
+            &self.decision_stack,
+            &mut self.assignment_queue,
+            &self.activities,
+        );
+    }
+
+    fn add_constraint_to<TheoryT, ConstraintT>(
+        theory: &mut TheoryT,
+        constraint: ConstraintT,
+        decision_stack: &DecisionStack<impl Copy>,
+        assignment_queue: &mut AssignmentQueue<PBExplainKey>,
+        activities: &Activities,
+    ) where
+        TheoryT: TheoryAddConstraintTrait<ConstraintT>,
+        TheoryT::ExplainKey: Into<PBExplainKey>,
+    {
+        theory
+            .add_constraint(constraint, decision_stack, |propagation| {
+                assignment_queue.push(
+                    propagation.literal,
+                    Reason::Propagation {
+                        explain_key: propagation.explain_key.into(),
+                    },
+                    activities.activity(propagation.literal.index()),
+                    propagation.plbd,
+                );
+            })
+            .unwrap();
+    }
+
     pub fn decide(&mut self) {
         assert!(self.state.is_noconflict());
         debug_assert!(self.assignment_queue.is_empty());

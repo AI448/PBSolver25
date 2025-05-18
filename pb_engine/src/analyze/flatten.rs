@@ -43,6 +43,7 @@ impl FlattenConflictConstraint {
             |literal, _| {
                 // 割り当て順序が早いものを優先
                 // Reverse(engine.get_assignment_order(literal.index()))
+                // アクティビティが大きいものを優先
                 OrderedFloat::from(engine.activity(literal.index()))
             },
             engine,

@@ -3,7 +3,7 @@
 mod plbd_watcher;
 mod read_opb;
 
-use std::{io::BufReader, usize};
+use std::{io::BufReader, time::Duration, usize};
 
 use pb_engine::{
     Analyze, AnalyzeResult, Boolean, CalculatePLBD, CountConstraintView, LinearConstraintTrait,
@@ -149,7 +149,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
         }
     }
 
-    eprintln!("   RESTART CONFLICT     CLEVEL      PLBD  #MONADIC    #COUNT   #LINEAR");
+    eprintln!("   RESTART CONFLICT     CLEVEL      PLBD  #MONADIC    #COUNT   #LINEAR      TIME");
 
     let mut plbd_watcher = PLBDWatcher::new(10, 1000);
     let mut analyzer = Analyze::new(1e-8);
@@ -160,14 +160,15 @@ fn solve(pb_problem: &PBProblem) -> Status {
     let mut previous_restart_timestamp = 0;
 
     eprintln!(
-        "{:9} {:9} {:9} {:9} {:9} {:9} {:9}",
+        "{:9} {:9} {:9} {:9} {:9} {:9} {:9} {:9}",
         restart_count,
         conflict_count,
         "",
         "",
         pb_engine.number_of_monadic_clauses(),
         pb_engine.number_of_count_constraints(),
-        pb_engine.number_of_integer_linear_constraints()
+        pb_engine.number_of_integer_linear_constraints(),
+        start_time.elapsed().as_secs_f64()
     );
 
     loop {
@@ -222,16 +223,16 @@ fn solve(pb_problem: &PBProblem) -> Status {
             add_integer_linear_constraint(&mut pb_engine, &learnt_constraint);
 
             eprintln!(
-                "{:9} {:9} {:9} {:9} {:9} {:9} {:9}",
+                "{:9} {:9} {:9} {:9} {:9} {:9} {:9} {:9}",
                 restart_count,
                 conflict_count,
                 conflict_level,
                 plbd,
                 pb_engine.number_of_monadic_clauses(),
                 pb_engine.number_of_count_constraints(),
-                pb_engine.number_of_integer_linear_constraints()
+                pb_engine.number_of_integer_linear_constraints(),
+                start_time.elapsed().as_secs_f64()
             );
-            eprintln!("{}", plbd_watcher.lower_tail_probability());
         } else if pb_engine.number_of_assignments() == pb_engine.number_of_variables() {
             for constraint in pb_problem.constraints.iter() {
                 let mut lhs = 0;
@@ -251,8 +252,8 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             return Status::Satisfiable;
-        } else if conflict_count >= previous_restart_timestamp + 10
-            && plbd_watcher.lower_tail_probability() > 0.9
+        } else if conflict_count >= previous_restart_timestamp + 20
+            && plbd_watcher.lower_tail_probability() > 0.7
         {
             restart_count += 1;
             previous_restart_timestamp = conflict_count;
@@ -276,21 +277,50 @@ fn add_integer_linear_constraint(
         return;
     }
     let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
-    pb_engine.add_constraint(if integer_linear_constraint.len() == 1 {
-        PBConstraint::MonadicClause(MonadicClause {
-            literal: integer_linear_constraint.iter_terms().next().unwrap().0,
-        })
-    } else if integer_linear_constraint
+
+    if integer_linear_constraint
         .iter_terms()
         .all(|(_, coefficient)| coefficient == 1)
     {
-        PBConstraint::CountConstraint(CountConstraintView::new(
-            integer_linear_constraint
-                .iter_terms()
-                .map(|(literal, _)| literal),
-            integer_linear_constraint.lower(),
-        ))
+        if integer_linear_constraint.len() == integer_linear_constraint.lower() as usize {
+            for (literal, _) in integer_linear_constraint.iter_terms() {
+                pb_engine.add_monadic_clause(MonadicClause { literal });
+            }
+        } else {
+            pb_engine.add_count_constraint(CountConstraintView::new(
+                integer_linear_constraint
+                    .iter_terms()
+                    .map(|(literal, _)| literal),
+                integer_linear_constraint.lower(),
+            ));
+        }
     } else {
-        PBConstraint::IntegerLinearConstraint(integer_linear_constraint)
-    });
+        let mut sum_of_unsaturating_coefficients = 0;
+        for (_, coefficient) in integer_linear_constraint.iter_terms() {
+            if coefficient < integer_linear_constraint.lower() {
+                sum_of_unsaturating_coefficients += coefficient;
+            }
+        }
+        if sum_of_unsaturating_coefficients == integer_linear_constraint.lower() {
+            // SAT 符号化して追加
+            let saturating_literals = integer_linear_constraint
+                .iter_terms()
+                .filter(|&(_, coefficient)| coefficient >= integer_linear_constraint.lower())
+                .map(|(literal, _)| literal);
+            let unsaturating_literals = integer_linear_constraint
+                .iter_terms()
+                .filter(|&(_, coefficient)| coefficient < integer_linear_constraint.lower())
+                .map(|(literal, _)| literal);
+            for unsaturating_literal in unsaturating_literals {
+                pb_engine.add_count_constraint(CountConstraintView::new(
+                    saturating_literals
+                        .clone()
+                        .chain([unsaturating_literal].into_iter()),
+                    1,
+                ));
+            }
+        } else {
+            pb_engine.add_integer_linear_constraint(integer_linear_constraint);
+        }
+    }
 }
