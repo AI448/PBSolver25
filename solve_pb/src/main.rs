@@ -152,7 +152,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
     eprintln!("   RESTART CONFLICT     CLEVEL      PLBD  #MONADIC    #COUNT   #LINEAR      TIME");
 
     let mut plbd_watcher = PLBDWatcher::new(10, 1000);
-    let mut analyzer = Analyze::new(1e-8);
+    let mut analyzer = Analyze::new(1e-10);
     let mut calculate_plbd = CalculatePLBD::default();
 
     let mut conflict_count: usize = 0;

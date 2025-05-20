@@ -7,10 +7,12 @@ mod round;
 mod round_reason_constraint;
 mod utility;
 mod weaken;
+mod find_conflict_literal;
 
 use std::{cmp::Reverse, usize};
 
 use calculate_propagation_level::CalculatePropagationLevel;
+use find_conflict_literal::FindConflictLiteral;
 use flatten::FlattenConflictConstraint;
 use identify_propagation_causals::IdentifyPropagationCausals;
 use resolve::Resolve;
@@ -37,6 +39,7 @@ where
 
 pub struct Analyze {
     calculate_propagation_level: CalculatePropagationLevel,
+    find_conflict_literal: FindConflictLiteral,
     identify_propagation_causals: IdentifyPropagationCausals,
     resolve: Resolve,
     flatten: FlattenConflictConstraint,
@@ -48,6 +51,7 @@ impl Analyze {
     pub fn new(integrality_tolerance: f64) -> Self {
         Self {
             calculate_propagation_level: CalculatePropagationLevel::new(),
+            find_conflict_literal: FindConflictLiteral::default(),
             identify_propagation_causals: IdentifyPropagationCausals::new(),
             resolve: Resolve::new(integrality_tolerance),
             flatten: FlattenConflictConstraint::new(1000000),
@@ -154,35 +158,27 @@ impl Analyze {
                 };
             }
 
-            let resolving_variable = self
-                .conflict_constraint
-                .iter_terms()
-                .map(|(literal, _)| literal)
-                .filter(|&literal| {
-                    engine.is_false_at(literal, conflict_order - 1)
-                        && engine.get_reason(literal.index()).unwrap().is_propagation()
-                })
-                .max_by_key(|&literal| engine.get_assignment_order(literal.index()))
-                .unwrap()
-                .index();
+            let conflict_literal = self.find_conflict_literal.find(&self.conflict_constraint, engine);
 
-            conflict_order = engine.get_assignment_order(resolving_variable);
+            conflict_order = engine.get_assignment_order(conflict_literal.index());
 
             let reason_constraint = {
                 let Reason::Propagation { explain_key } =
-                    engine.get_reason(resolving_variable).unwrap()
+                    engine.get_reason(conflict_literal.index()).unwrap()
                 else {
                     unreachable!()
                 };
                 engine.explain(explain_key)
             };
+            let reason_constraint = drop_fixed_variable(&reason_constraint, engine);
 
-            let resolved_constraint = self.resolve.call(
-                &self.conflict_constraint,
-                &drop_fixed_variable(&reason_constraint, engine),
-                resolving_variable,
-                engine,
-            );
+            let resolved_constraint = 
+                self.resolve.call(
+                    &self.conflict_constraint,
+                    &reason_constraint,
+                    conflict_literal.index(),
+                    engine,
+                );
 
             let max_coefficient = resolved_constraint
                 .iter_terms()

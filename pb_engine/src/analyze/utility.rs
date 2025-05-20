@@ -1,5 +1,5 @@
 use either::Either;
-use num::{Num, Unsigned};
+use num::{integer::gcd, Integer, Num, Unsigned};
 use std::cmp::min;
 use std::ops::AddAssign;
 
@@ -112,7 +112,7 @@ pub fn strengthen_integer_linear_constraint(
 
 pub fn calculate_gcd<ValueT>(values: impl Iterator<Item = ValueT>) -> ValueT
 where
-    ValueT: Unsigned + Ord + Copy,
+    ValueT: Integer,
 {
     let mut x = ValueT::zero();
     for y in values {
@@ -124,23 +124,23 @@ where
     return x;
 }
 
-pub fn gcd<ValueT>(mut x: ValueT, mut y: ValueT) -> ValueT
-where
-    ValueT: Unsigned + Ord + Copy,
-{
-    if x > y {
-        let z = x;
-        x = y;
-        y = z;
-    }
+// pub fn gcd<ValueT>(mut x: ValueT, mut y: ValueT) -> ValueT
+// where
+//     ValueT: Unsigned + Ord + Copy,
+// {
+//     if x > y {
+//         let z = x;
+//         x = y;
+//         y = z;
+//     }
 
-    loop {
-        debug_assert!(x <= y);
-        if x.is_zero() {
-            return y;
-        }
-        let z = y % x;
-        y = x;
-        x = z;
-    }
-}
+//     loop {
+//         debug_assert!(x <= y);
+//         if x.is_zero() {
+//             return y;
+//         }
+//         let z = y % x;
+//         y = x;
+//         x = z;
+//     }
+// }

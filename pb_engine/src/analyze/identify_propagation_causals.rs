@@ -33,7 +33,7 @@ impl IdentifyPropagationCausals {
         let mut sup = 0;
         let mut resolving_coefficient = 0;
         for (literal, coefficient) in reason_constraint.iter_terms() {
-            if pb_engine.is_false_at(literal, resolving_order) {
+            if pb_engine.is_false_at(literal, resolving_order - 1) {
                 self.causal_terms.push(Term {
                     literal,
                     coefficient,

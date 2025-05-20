@@ -1,21 +1,21 @@
+use num::{integer::gcd, Integer};
+
 use crate::{
-    LinearConstraintTrait, Literal, PBEngine,
-    analyze::utility::strengthen_integer_linear_constraint,
-    constraints::RandomAccessibleLinearConstraint,
+    analyze::utility::{lhs_sup_of_linear_constraint_at, strengthen_integer_linear_constraint}, constraints::RandomAccessibleLinearConstraint, LinearConstraintTrait, Literal, PBEngine
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
 
 pub struct Resolve {
-    round_reason_constraint: RoundReasonConstraint,
-    conflict_constraint: RandomAccessibleLinearConstraint<u64>,
+    round_constraint: RoundReasonConstraint,
+    resolved_constraint: RandomAccessibleLinearConstraint<u64>,
 }
 
 impl Resolve {
     pub fn new(integrality_tolerance: f64) -> Self {
         Self {
-            round_reason_constraint: RoundReasonConstraint::new(integrality_tolerance),
-            conflict_constraint: RandomAccessibleLinearConstraint::default(),
+            round_constraint: RoundReasonConstraint::new(integrality_tolerance),
+            resolved_constraint: RandomAccessibleLinearConstraint::default(),
         }
     }
     pub fn call(
@@ -30,7 +30,6 @@ impl Resolve {
             .find(|&(literal, _)| literal.index() == resolving_variable)
             .unwrap()
             .0;
-
         debug_assert!(
             conflict_constraint
                 .iter_terms()
@@ -38,26 +37,42 @@ impl Resolve {
                 .is_some()
         );
 
-        self.conflict_constraint
-            .replace_by_linear_constraint(&conflict_constraint);
-        let conflict_coefficient = self
-            .conflict_constraint
-            .get(Literal::new(resolving_variable, crate::Boolean::FALSE))
-            .or(self
-                .conflict_constraint
-                .get(Literal::new(resolving_variable, crate::Boolean::TRUE)))
-            .unwrap();
+        let conflict_order = engine.get_assignment_order(propagated_literal.index());
 
-        self.round_reason_constraint.round(
-            reason_constraint,
-            &self.conflict_constraint,
-            propagated_literal,
-            engine,
-        );
+        let conflict_slack = lhs_sup_of_linear_constraint_at(&conflict_constraint, conflict_order - 1, engine) - conflict_constraint.lower();
+        let reason_slack = lhs_sup_of_linear_constraint_at(&reason_constraint, conflict_order - 1, engine) - reason_constraint.lower();
 
-        self.conflict_constraint
-            .add_assign(&self.round_reason_constraint.get().mul(conflict_coefficient));
+        if conflict_slack == 0 || reason_slack == 0 {
+            let conflict_coefficient = conflict_constraint.iter_terms().find(|&(literal, _)|literal.index() == resolving_variable).unwrap().1;
+            let reason_coefficient = reason_constraint.iter_terms().find(|&(literal, _)|literal.index() == resolving_variable).unwrap().1;
+            let g = gcd(conflict_coefficient, reason_coefficient);
+            self.resolved_constraint
+                .replace_by_linear_constraint(&conflict_constraint.mul(reason_coefficient / g));
+            self.resolved_constraint.add_assign(
+                &reason_constraint.mul(conflict_coefficient / g)
+            );
+        } else {
+            self.resolved_constraint
+                .replace_by_linear_constraint(&conflict_constraint);
+            let conflict_coefficient = self
+                .resolved_constraint
+                .get(Literal::new(resolving_variable, crate::Boolean::FALSE))
+                .or(self
+                    .resolved_constraint
+                    .get(Literal::new(resolving_variable, crate::Boolean::TRUE)))
+                .unwrap();
 
-        return strengthen_integer_linear_constraint(&self.conflict_constraint);
+            self.round_constraint.round(
+                reason_constraint,
+                &self.resolved_constraint,
+                propagated_literal,
+                engine,
+            );
+
+            self.resolved_constraint
+                .add_assign(&self.round_constraint.get().mul(conflict_coefficient));
+        }
+
+        return strengthen_integer_linear_constraint(&self.resolved_constraint);
     }
 }
