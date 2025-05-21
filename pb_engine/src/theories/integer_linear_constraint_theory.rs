@@ -1,9 +1,9 @@
-use std::cmp::max;
+use std::cmp::{max, min};
 
 use super::{Propagation, TheoryAddConstraintTrait, TheoryTrait};
 use crate::{
     Literal, calculate_plbd::CalculatePLBD, collections::LiteralArray,
-    constraints::LinearConstraintTrait, decision_stack::DecisionStack,
+    constraints::LinearConstraintTrait, decision_stack::DecisionStack, engine,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -15,23 +15,32 @@ pub struct IntegerLinearConstraintExplainKey {
 pub struct IntegerLinearConstraintTheory {
     calculate_plbd: CalculatePLBD,
     rows: Vec<Row>,
+    number_of_constraints: usize,
     columns: LiteralArray<Column>,
     number_of_evaluated_assignments: usize,
+    activity_time_constant: f64,
+    activity_increase_value: f64,
+    backjump_count: usize,
+    reducing_backjump_count: usize,
 }
 
 impl IntegerLinearConstraintTheory {
-    pub fn new() -> Self {
+    pub fn new(activity_time_constant: f64) -> Self {
         Self {
             calculate_plbd: CalculatePLBD::default(),
             rows: Vec::default(),
+            number_of_constraints: 0,
             columns: LiteralArray::default(),
             number_of_evaluated_assignments: 0,
+            activity_time_constant,
+            activity_increase_value: 1.0,
+            backjump_count: 0,
+            reducing_backjump_count: 3000,
         }
     }
 
     pub fn number_of_constraints(&self) -> usize {
-        // TODO: 学習節の削除を行うとずれるのでちゃんと数える
-        return self.rows.len();
+        return self.number_of_constraints;
     }
 }
 
@@ -52,8 +61,14 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
         let assigned_literal = decision_stack.get_assignment(self.number_of_evaluated_assignments);
         self.number_of_evaluated_assignments += 1;
         // !assigned_literal を含む行を走査
-        for &(row_id, coefficient) in self.columns[!assigned_literal].terms.iter() {
+        let column = &mut self.columns[!assigned_literal].terms;
+        for k in (0..column.len()).rev() {
+            let (row_id, coefficient) = column[k];
             let row = &mut self.rows[row_id];
+            if row.state == RowState::Deleted {
+                column.swap_remove(k);
+                continue;
+            }
             // 左辺値の上界を更新
             row.sup -= coefficient;
             debug_assert!(row.sup >= row.lower);
@@ -85,6 +100,9 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
                     .filter(|&literal| decision_stack.is_true(literal)),
                 decision_stack,
             );
+            row.min_plbd = min(row.min_plbd, plbd);
+            row.activity += self.activity_increase_value;
+
             // 伝播
             while k < row.terms.len() {
                 let (literal, coefficient) = row.terms[k];
@@ -132,6 +150,31 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
                     u64::max(row.max_unassigned_coefficient, coefficient);
             }
         }
+
+        self.backjump_count += 1;
+        self.activity_increase_value /= 1.0 - 1.0 / self.activity_time_constant;
+
+        if backjump_level == 0 && self.backjump_count > self.reducing_backjump_count {
+            eprintln!("REDUCE(LINEAR)");
+            self.reducing_backjump_count = self.backjump_count + 3000 + self.backjump_count / 10;
+            let mut rows = Vec::default();
+            for (row_id, row) in self.rows.iter_mut().enumerate() {
+                row.activity /= self.activity_increase_value;
+                if row.state == RowState::Learnt && row.min_plbd >= 2 {
+                    rows.push((row_id, row.activity));
+                }
+            }
+            self.activity_increase_value = 1.0;
+            rows.sort_unstable_by(|lhs, rhs| rhs.1.partial_cmp(&lhs.1).unwrap());
+            for &(row_id, _) in rows.iter().skip(max(1000, rows.len() / 2)) {
+                let row = &mut self.rows[row_id];
+                debug_assert!(row.state == RowState::Learnt);
+                row.state = RowState::Deleted;
+                row.terms.clear();
+                row.terms.shrink_to_fit();
+                self.number_of_constraints -= 1;
+            }
+        }
     }
 
     fn explain(&self, explain_key: Self::ExplainKey) -> Self::ExplanationConstraint<'_> {
@@ -146,6 +189,7 @@ where
     fn add_constraint<ExplainKeyT: Copy>(
         &mut self,
         constraint: ConstraintT,
+        is_learnt: bool,
         decision_stack: &DecisionStack<ExplainKeyT>,
         mut callback: impl FnMut(Propagation<Self::ExplainKey>),
     ) -> Result<(), usize> {
@@ -193,10 +237,18 @@ where
         self.rows.push(Row {
             terms,
             lower,
+            state: if is_learnt {
+                RowState::Learnt
+            } else {
+                RowState::Original
+            },
+            min_plbd: constraint.iter_terms().count(),
+            activity: 0.0,
             sup,
             max_unassigned_coefficient,
         });
-        let row = self.rows.last().unwrap();
+        self.number_of_constraints += 1;
+        let row = self.rows.last_mut().unwrap();
 
         // 列方向の係数を追加
         for &(literal, coefficient) in row.terms.iter() {
@@ -212,6 +264,9 @@ where
                     .filter(|&literal| decision_stack.is_true(literal)),
                 decision_stack,
             );
+            row.min_plbd = plbd;
+            row.activity += self.activity_increase_value;
+
             for &(literal, coefficient) in row.terms.iter() {
                 // 伝播が発生しない場合には break
                 if row.sup >= row.lower + coefficient {
@@ -232,10 +287,20 @@ where
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum RowState {
+    Original,
+    Learnt,
+    Deleted,
+}
+
 #[derive(Clone, Debug)]
 struct Row {
     terms: Vec<(Literal, u64)>,
     lower: u64,
+    state: RowState,
+    min_plbd: usize,
+    activity: f64,
     sup: u64,
     max_unassigned_coefficient: u64,
 }

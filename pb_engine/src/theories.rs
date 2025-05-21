@@ -38,6 +38,7 @@ pub trait TheoryAddConstraintTrait<ConstraintT>: TheoryTrait {
     fn add_constraint<ExplainKeyT: Copy>(
         &mut self,
         constraint: ConstraintT,
+        is_learnt: bool,
         decision_stack: &DecisionStack<ExplainKeyT>,
         callback: impl FnMut(Propagation<Self::ExplainKey>),
     ) -> Result<(), usize>;

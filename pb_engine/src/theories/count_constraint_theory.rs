@@ -1,3 +1,5 @@
+use std::cmp::{max, min};
+
 use crate::{
     Literal, calculate_plbd::CalculatePLBD, collections::LiteralArray,
     constraints::CountConstraintTrait, decision_stack::DecisionStack, theories::Propagation,
@@ -12,25 +14,34 @@ pub struct CountConstraintExplainKey {
 
 #[derive(Clone)]
 pub struct CountConstraintTheory {
+    activity_time_constant: f64,
     calculate_plbd: CalculatePLBD,
     watching_rows: LiteralArray<Vec<Watch>>,
     rows: Vec<Row>,
+    number_of_constraints: usize,
     number_of_evaluated_assignments: usize,
+    activity_increase_value: f64,
+    backjump_count: usize,
+    reducing_backjump_count: usize,
 }
 
 impl CountConstraintTheory {
-    pub fn new() -> Self {
+    pub fn new(activity_time_constant: f64) -> Self {
         Self {
+            activity_time_constant,
             calculate_plbd: CalculatePLBD::default(),
             watching_rows: LiteralArray::default(),
             rows: Vec::default(),
+            number_of_constraints: 0,
             number_of_evaluated_assignments: 0,
+            activity_increase_value: 1.0,
+            backjump_count: 0,
+            reducing_backjump_count: 10000,
         }
     }
 
     pub fn number_of_constraints(&self) -> usize {
-        // TODO: 学習節の削除を行うとずれるのでちゃんと数える
-        return self.rows.len();
+        return self.number_of_constraints;
     }
 }
 
@@ -59,6 +70,10 @@ impl TheoryTrait for CountConstraintTheory {
         'for_k: for k in (0..self.watching_rows[!assigned_literal].len()).rev() {
             let watch = self.watching_rows[!assigned_literal][k];
             let row = &mut self.rows[watch.row_id];
+            if row.state == RowState::Deleted {
+                self.watching_rows[!assigned_literal].swap_remove(k);
+                continue;
+            }
             debug_assert!(watch.position < row.number_of_watching_literals);
             debug_assert!(row.literals[watch.position] == !assigned_literal);
 
@@ -80,6 +95,8 @@ impl TheoryTrait for CountConstraintTheory {
                 ),
                 decision_stack,
             );
+            row.plbd = min(row.plbd, plbd);
+            row.activity += self.activity_increase_value;
 
             for &literal in row.literals[..row.number_of_watching_literals].iter() {
                 debug_assert!(literal == !assigned_literal || !decision_stack.is_false(literal));
@@ -104,6 +121,29 @@ impl TheoryTrait for CountConstraintTheory {
         let backjump_order = decision_stack.order_range(backjump_level).end;
         assert!(backjump_order <= self.number_of_evaluated_assignments);
         self.number_of_evaluated_assignments = backjump_order;
+        self.backjump_count += 1;
+        self.activity_increase_value /= 1.0 - 1.0 / self.activity_time_constant;
+
+        if backjump_level == 0 && self.backjump_count > self.reducing_backjump_count {
+            eprintln!("REDUCE");
+            self.reducing_backjump_count = self.backjump_count + 10000 + self.backjump_count / 10;
+            let mut rows = Vec::default();
+            for (row_id, row) in self.rows.iter_mut().enumerate() {
+                row.activity /= self.activity_increase_value;
+                if row.state == RowState::Learnt && row.plbd >= 2 {
+                    rows.push((row_id, row.activity));
+                }
+            }
+            self.activity_increase_value = 1.0;
+            rows.sort_unstable_by(|lhs, rhs| rhs.1.partial_cmp(&lhs.1).unwrap());
+            for &(row_id, _) in rows.iter().skip(max(1000, rows.len() / 2)) {
+                let row = &mut self.rows[row_id];
+                debug_assert!(row.state == RowState::Learnt);
+                row.state = RowState::Deleted;
+                row.literals.clear();
+                self.number_of_constraints -= 1;
+            }
+        }
     }
 
     fn explain(&self, explain_key: Self::ExplainKey) -> Self::ExplanationConstraint<'_> {
@@ -118,6 +158,7 @@ where
     fn add_constraint<ExplainKeyT: Copy>(
         &mut self,
         constraint: CountConstraintT,
+        is_learnt: bool,
         decision_stack: &DecisionStack<ExplainKeyT>,
         mut callback: impl FnMut(Propagation<Self::ExplainKey>),
     ) -> Result<(), usize> {
@@ -167,11 +208,22 @@ where
 
             // 制約を追加
             let row_id = self.rows.len();
-            self.rows.push(Row {
-                literals,
-                lower,
-                number_of_watching_literals,
-            });
+            {
+                let plbd = literals.len() - lower as usize;
+                self.rows.push(Row {
+                    literals,
+                    lower,
+                    number_of_watching_literals,
+                    state: if is_learnt {
+                        RowState::Learnt
+                    } else {
+                        RowState::Original
+                    },
+                    activity: 0.0,
+                    plbd,
+                });
+            }
+            self.number_of_constraints += 1;
             let row = self.rows.last_mut().unwrap();
 
             // 監視を追加
@@ -190,6 +242,8 @@ where
                         .map(|&literal| !literal),
                     decision_stack,
                 );
+                row.plbd = plbd;
+                row.activity += self.activity_increase_value;
 
                 for &literal in row.literals[..row.number_of_watching_literals - 1].iter() {
                     debug_assert!(!decision_stack.is_false(literal));
@@ -211,7 +265,15 @@ where
                 literals: constraint.iter_terms().collect(),
                 lower,
                 number_of_watching_literals: 0,
+                state: if is_learnt {
+                    RowState::Learnt
+                } else {
+                    RowState::Original
+                },
+                activity: 0.0,
+                plbd: 0,
             });
+            self.number_of_constraints += 1;
             // let row = self.rows.last_mut().unwrap();
 
             for literal in constraint.iter_terms() {
@@ -229,11 +291,21 @@ where
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum RowState {
+    Original,
+    Learnt,
+    Deleted,
+}
+
 #[derive(Clone, Debug)]
 struct Row {
     literals: Vec<Literal>,
     lower: u64,
     number_of_watching_literals: usize,
+    state: RowState,
+    activity: f64,
+    plbd: usize,
 }
 
 impl CountConstraintTrait for Row {

@@ -1,7 +1,9 @@
-use num::{integer::gcd, Integer};
+use num::{Integer, integer::gcd};
 
 use crate::{
-    analyze::utility::{lhs_sup_of_linear_constraint_at, strengthen_integer_linear_constraint}, constraints::RandomAccessibleLinearConstraint, LinearConstraintTrait, Literal, PBEngine
+    LinearConstraintTrait, Literal, PBEngine,
+    analyze::utility::{lhs_sup_of_linear_constraint_at, strengthen_integer_linear_constraint},
+    constraints::RandomAccessibleLinearConstraint,
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
@@ -39,28 +41,34 @@ impl Resolve {
 
         let conflict_order = engine.get_assignment_order(propagated_literal.index());
 
-        let conflict_slack = lhs_sup_of_linear_constraint_at(&conflict_constraint, conflict_order - 1, engine) - conflict_constraint.lower();
-        let reason_slack = lhs_sup_of_linear_constraint_at(&reason_constraint, conflict_order - 1, engine) - reason_constraint.lower();
+        let conflict_coefficient = conflict_constraint
+            .iter_terms()
+            .find(|&(literal, _)| literal.index() == resolving_variable)
+            .unwrap()
+            .1;
+        let reason_coefficient = reason_constraint
+            .iter_terms()
+            .find(|&(literal, _)| literal.index() == resolving_variable)
+            .unwrap()
+            .1;
 
+        let conflict_slack =
+            lhs_sup_of_linear_constraint_at(&conflict_constraint, conflict_order - 1, engine)
+                - conflict_constraint.lower();
+        let reason_slack =
+            lhs_sup_of_linear_constraint_at(&reason_constraint, conflict_order - 1, engine)
+                - reason_constraint.lower();
+
+        // if (conflict_slack as f64) / (conflict_coefficient as f64) + (reason_slack as f64) / (reason_coefficient as f64) < 0.9999 {
         if conflict_slack == 0 || reason_slack == 0 {
-            let conflict_coefficient = conflict_constraint.iter_terms().find(|&(literal, _)|literal.index() == resolving_variable).unwrap().1;
-            let reason_coefficient = reason_constraint.iter_terms().find(|&(literal, _)|literal.index() == resolving_variable).unwrap().1;
             let g = gcd(conflict_coefficient, reason_coefficient);
             self.resolved_constraint
                 .replace_by_linear_constraint(&conflict_constraint.mul(reason_coefficient / g));
-            self.resolved_constraint.add_assign(
-                &reason_constraint.mul(conflict_coefficient / g)
-            );
+            self.resolved_constraint
+                .add_assign(&reason_constraint.mul(conflict_coefficient / g));
         } else {
             self.resolved_constraint
                 .replace_by_linear_constraint(&conflict_constraint);
-            let conflict_coefficient = self
-                .resolved_constraint
-                .get(Literal::new(resolving_variable, crate::Boolean::FALSE))
-                .or(self
-                    .resolved_constraint
-                    .get(Literal::new(resolving_variable, crate::Boolean::TRUE)))
-                .unwrap();
 
             self.round_constraint.round(
                 reason_constraint,

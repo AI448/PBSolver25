@@ -130,8 +130,8 @@ impl PBEngine {
             decision_stack: DecisionStack::default(),
             activities: Activities::new(activity_time_constant),
             monadic_clause_theory: MonadicClauseTheory::new(),
-            count_constraint_theory: CountConstraintTheory::new(),
-            integer_linear_constraint_theory: IntegerLinearConstraintTheory::new(),
+            count_constraint_theory: CountConstraintTheory::new(1e4),
+            integer_linear_constraint_theory: IntegerLinearConstraintTheory::new(1e4),
             assignment_queue: AssignmentQueue::default(),
             state: PBState::Noconflict,
         }
@@ -185,20 +185,26 @@ impl PBEngine {
         self.integer_linear_constraint_theory.add_variable();
     }
 
-    pub fn add_monadic_clause(&mut self, monadic_clause: MonadicClause) {
+    pub fn add_monadic_clause(&mut self, monadic_clause: MonadicClause, is_learnt: bool) {
         Self::add_constraint_to(
             &mut self.monadic_clause_theory,
             monadic_clause,
+            is_learnt,
             &self.decision_stack,
             &mut self.assignment_queue,
             &self.activities,
         );
     }
 
-    pub fn add_count_constraint(&mut self, count_constraint: impl CountConstraintTrait) {
+    pub fn add_count_constraint(
+        &mut self,
+        count_constraint: impl CountConstraintTrait,
+        is_learnt: bool,
+    ) {
         Self::add_constraint_to(
             &mut self.count_constraint_theory,
             count_constraint,
+            is_learnt,
             &self.decision_stack,
             &mut self.assignment_queue,
             &self.activities,
@@ -208,10 +214,12 @@ impl PBEngine {
     pub fn add_integer_linear_constraint(
         &mut self,
         constraint: impl LinearConstraintTrait<Value = u64>,
+        is_learnt: bool,
     ) {
         Self::add_constraint_to(
             &mut self.integer_linear_constraint_theory,
             constraint,
+            is_learnt,
             &self.decision_stack,
             &mut self.assignment_queue,
             &self.activities,
@@ -221,6 +229,7 @@ impl PBEngine {
     fn add_constraint_to<TheoryT, ConstraintT>(
         theory: &mut TheoryT,
         constraint: ConstraintT,
+        is_learnt: bool,
         decision_stack: &DecisionStack<impl Copy>,
         assignment_queue: &mut AssignmentQueue<PBExplainKey>,
         activities: &Activities,
@@ -229,7 +238,7 @@ impl PBEngine {
         TheoryT::ExplainKey: Into<PBExplainKey>,
     {
         theory
-            .add_constraint(constraint, decision_stack, |propagation| {
+            .add_constraint(constraint, is_learnt, decision_stack, |propagation| {
                 assignment_queue.push(
                     propagation.literal,
                     Reason::Propagation {

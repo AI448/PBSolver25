@@ -114,6 +114,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             add_integer_linear_constraint(
                 pb_engine,
                 &LinearConstraintView::new(pb_terms, pb_lower as u64),
+                false,
             );
 
             return Ok(());
@@ -220,7 +221,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
             pb_engine.backjump(backjump_level);
 
-            add_integer_linear_constraint(&mut pb_engine, &learnt_constraint);
+            add_integer_linear_constraint(&mut pb_engine, &learnt_constraint, true);
 
             eprintln!(
                 "{:9} {:9} {:9} {:9} {:9} {:9} {:9} {:9}",
@@ -272,6 +273,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 fn add_integer_linear_constraint(
     pb_engine: &mut PBEngine,
     integer_linear_constraint: &impl LinearConstraintTrait<Value = u64>,
+    is_learnt: bool,
 ) {
     if integer_linear_constraint.lower() == 0 {
         return;
@@ -284,15 +286,18 @@ fn add_integer_linear_constraint(
     {
         if integer_linear_constraint.len() == integer_linear_constraint.lower() as usize {
             for (literal, _) in integer_linear_constraint.iter_terms() {
-                pb_engine.add_monadic_clause(MonadicClause { literal });
+                pb_engine.add_monadic_clause(MonadicClause { literal }, is_learnt);
             }
         } else {
-            pb_engine.add_count_constraint(CountConstraintView::new(
-                integer_linear_constraint
-                    .iter_terms()
-                    .map(|(literal, _)| literal),
-                integer_linear_constraint.lower(),
-            ));
+            pb_engine.add_count_constraint(
+                CountConstraintView::new(
+                    integer_linear_constraint
+                        .iter_terms()
+                        .map(|(literal, _)| literal),
+                    integer_linear_constraint.lower(),
+                ),
+                is_learnt,
+            );
         }
     } else {
         let mut sum_of_unsaturating_coefficients = 0;
@@ -312,15 +317,18 @@ fn add_integer_linear_constraint(
                 .filter(|&(_, coefficient)| coefficient < integer_linear_constraint.lower())
                 .map(|(literal, _)| literal);
             for unsaturating_literal in unsaturating_literals {
-                pb_engine.add_count_constraint(CountConstraintView::new(
-                    saturating_literals
-                        .clone()
-                        .chain([unsaturating_literal].into_iter()),
-                    1,
-                ));
+                pb_engine.add_count_constraint(
+                    CountConstraintView::new(
+                        saturating_literals
+                            .clone()
+                            .chain([unsaturating_literal].into_iter()),
+                        1,
+                    ),
+                    is_learnt,
+                );
             }
         } else {
-            pb_engine.add_integer_linear_constraint(integer_linear_constraint);
+            pb_engine.add_integer_linear_constraint(integer_linear_constraint, is_learnt);
         }
     }
 }

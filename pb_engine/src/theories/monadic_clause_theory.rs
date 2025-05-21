@@ -64,6 +64,7 @@ impl TheoryAddConstraintTrait<MonadicClause> for MonadicClauseTheory {
     fn add_constraint<ExplainKeyT: Copy>(
         &mut self,
         constraint: MonadicClause,
+        _is_learnt: bool,
         assignment_state: &DecisionStack<ExplainKeyT>,
         mut callback: impl FnMut(Propagation<Self::ExplainKey>),
     ) -> Result<(), usize> {

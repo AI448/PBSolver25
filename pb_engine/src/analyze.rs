@@ -1,4 +1,5 @@
 mod calculate_propagation_level;
+mod find_conflict_literal;
 mod flatten;
 mod identify_conflict_causals;
 mod identify_propagation_causals;
@@ -7,7 +8,6 @@ mod round;
 mod round_reason_constraint;
 mod utility;
 mod weaken;
-mod find_conflict_literal;
 
 use std::{cmp::Reverse, usize};
 
@@ -158,7 +158,9 @@ impl Analyze {
                 };
             }
 
-            let conflict_literal = self.find_conflict_literal.find(&self.conflict_constraint, engine);
+            let conflict_literal = self
+                .find_conflict_literal
+                .find(&self.conflict_constraint, engine);
 
             conflict_order = engine.get_assignment_order(conflict_literal.index());
 
@@ -172,13 +174,12 @@ impl Analyze {
             };
             let reason_constraint = drop_fixed_variable(&reason_constraint, engine);
 
-            let resolved_constraint = 
-                self.resolve.call(
-                    &self.conflict_constraint,
-                    &reason_constraint,
-                    conflict_literal.index(),
-                    engine,
-                );
+            let resolved_constraint = self.resolve.call(
+                &self.conflict_constraint,
+                &reason_constraint,
+                conflict_literal.index(),
+                engine,
+            );
 
             let max_coefficient = resolved_constraint
                 .iter_terms()

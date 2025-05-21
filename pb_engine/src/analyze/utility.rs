@@ -1,5 +1,5 @@
 use either::Either;
-use num::{integer::gcd, Integer, Num, Unsigned};
+use num::{Integer, Num, Unsigned, integer::gcd};
 use std::cmp::min;
 use std::ops::AddAssign;
 
