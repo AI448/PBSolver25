@@ -54,7 +54,7 @@ impl Analyze {
             find_conflict_literal: FindConflictLiteral::default(),
             identify_propagation_causals: IdentifyPropagationCausals::new(),
             resolve: Resolve::new(integrality_tolerance),
-            flatten: FlattenConflictConstraint::new(1000000),
+            flatten: FlattenConflictConstraint::new(u32::MAX as u64),
             conflicting_assignments: LiteralSet::default(),
             conflict_constraint: LinearConstraint::default(),
         }
@@ -103,12 +103,17 @@ impl Analyze {
             // スラックが大きい方を c, 小さい方を r とする
             let (c, r) = if slack[0] >= slack[1] { (0, 1) } else { (1, 0) };
             // 矛盾している制約条件を融合して conflict_constraint とする (r の方が丸められる)
-            self.conflict_constraint.replace(self.resolve.call(
+            let resolved_constraint = self.resolve.call(
                 &drop_fixed_variable(&conflict_constraints[c], engine),
                 &drop_fixed_variable(&conflict_constraints[r], engine),
                 conflict_variable,
                 engine,
-            ));
+            );
+            self.conflict_constraint.replace(
+                self.flatten
+                    .call(&resolved_constraint, usize::MAX, engine)
+                    .convert(),
+            );
         }
 
         let mut conflict_order = usize::MAX;
@@ -181,19 +186,11 @@ impl Analyze {
                 engine,
             );
 
-            let max_coefficient = resolved_constraint
-                .iter_terms()
-                .map(|(_, coefficient)| coefficient)
-                .max()
-                .unwrap_or(0);
-            if max_coefficient <= 1000000 {
-                self.conflict_constraint.replace(&resolved_constraint);
-            } else {
-                let flattened_constraint =
-                    self.flatten
-                        .call(&resolved_constraint, conflict_order, engine);
-                self.conflict_constraint.replace(&flattened_constraint);
-            }
+            self.conflict_constraint.replace(
+                self.flatten
+                    .call(&resolved_constraint, conflict_order, engine)
+                    .convert(),
+            );
         }
     }
 }

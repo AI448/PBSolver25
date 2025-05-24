@@ -1,7 +1,7 @@
-use num::{Integer, integer::gcd};
+use num::integer::gcd;
 
 use crate::{
-    LinearConstraintTrait, Literal, PBEngine,
+    LinearConstraintTrait, PBEngine,
     analyze::utility::{lhs_sup_of_linear_constraint_at, strengthen_integer_linear_constraint},
     constraints::RandomAccessibleLinearConstraint,
 };
@@ -10,7 +10,7 @@ use super::round_reason_constraint::RoundReasonConstraint;
 
 pub struct Resolve {
     round_constraint: RoundReasonConstraint,
-    resolved_constraint: RandomAccessibleLinearConstraint<u64>,
+    resolved_constraint: RandomAccessibleLinearConstraint<u128>,
 }
 
 impl Resolve {
@@ -26,7 +26,7 @@ impl Resolve {
         reason_constraint: &impl LinearConstraintTrait<Value = u64>,
         resolving_variable: usize,
         engine: &PBEngine,
-    ) -> impl LinearConstraintTrait<Value = u64> + '_ {
+    ) -> impl LinearConstraintTrait<Value = u128> + '_ {
         let propagated_literal = reason_constraint
             .iter_terms()
             .find(|&(literal, _)| literal.index() == resolving_variable)
@@ -58,27 +58,68 @@ impl Resolve {
         let reason_slack =
             lhs_sup_of_linear_constraint_at(&reason_constraint, conflict_order - 1, engine)
                 - reason_constraint.lower();
+        debug_assert!(conflict_slack < conflict_coefficient);
+        debug_assert!(reason_slack < reason_coefficient);
 
         // if (conflict_slack as f64) / (conflict_coefficient as f64) + (reason_slack as f64) / (reason_coefficient as f64) < 0.9999 {
-        if conflict_slack == 0 || reason_slack == 0 {
+        if (conflict_slack as u128) * (reason_coefficient as u128)
+            + (reason_slack as u128) * (conflict_coefficient as u128)
+            < (conflict_coefficient as u128) * (reason_coefficient as u128)
+        {
+            // if conflict_slack == 0 || reason_slack == 0 {
+            // if conflict_slack == 0 && reason_slack == 0 {
             let g = gcd(conflict_coefficient, reason_coefficient);
-            self.resolved_constraint
-                .replace_by_linear_constraint(&conflict_constraint.mul(reason_coefficient / g));
-            self.resolved_constraint
-                .add_assign(&reason_constraint.mul(conflict_coefficient / g));
-        } else {
-            self.resolved_constraint
-                .replace_by_linear_constraint(&conflict_constraint);
-
-            self.round_constraint.round(
-                reason_constraint,
-                &self.resolved_constraint,
-                propagated_literal,
-                engine,
+            self.resolved_constraint.replace_by_linear_constraint(
+                conflict_constraint
+                    .convert()
+                    .mul((reason_coefficient / g) as u128),
             );
+            self.resolved_constraint.add_assign(
+                reason_constraint
+                    .convert()
+                    .mul((conflict_coefficient / g) as u128),
+            );
+        } else {
+            // MEMO: どちらを丸めても大して変わらない？
+            // slack が小さい方を丸める
+            // if (conflict_slack as u128) * (reason_coefficient as u128) > (reason_slack as u128) * (conflict_coefficient as u128) {
+            // slack が大きい方を丸める
+            if (conflict_slack as u128) * (reason_coefficient as u128)
+                < (reason_slack as u128) * (conflict_coefficient as u128)
+            {
+                // if true {
+                self.resolved_constraint
+                    .replace_by_linear_constraint(conflict_constraint.convert());
 
-            self.resolved_constraint
-                .add_assign(&self.round_constraint.get().mul(conflict_coefficient));
+                let rounded_reason_constraint = self.round_constraint.round(
+                    reason_constraint,
+                    &self.resolved_constraint,
+                    propagated_literal,
+                    engine,
+                );
+
+                self.resolved_constraint.add_assign(
+                    rounded_reason_constraint
+                        .convert()
+                        .mul(conflict_coefficient as u128),
+                );
+            } else {
+                self.resolved_constraint
+                    .replace_by_linear_constraint(reason_constraint.convert());
+
+                let rounded_conflict_constraint = self.round_constraint.round(
+                    conflict_constraint,
+                    &self.resolved_constraint,
+                    !propagated_literal,
+                    engine,
+                );
+
+                self.resolved_constraint.add_assign(
+                    rounded_conflict_constraint
+                        .convert()
+                        .mul(reason_coefficient as u128),
+                );
+            }
         }
 
         return strengthen_integer_linear_constraint(&self.resolved_constraint);

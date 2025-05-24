@@ -1,38 +1,51 @@
-use std::cmp::min;
+use std::{cmp::min, fmt::Debug, iter::Sum, ops::SubAssign};
+
+use num::{PrimInt, Unsigned};
 
 use crate::{LinearConstraintTrait, LinearConstraintView, Literal, PBEngine};
 
-struct CausalTerm {
+struct CausalTerm<ValueT> {
     literal: Literal,
-    coefficient: u64,
+    coefficient: ValueT,
     probability: f64,
 }
 
-struct WeakeningTerm {
+struct WeakeningTerm<ValueT> {
     literal: Literal,
-    coefficient: u64,
-    coefficient_lower: u64,
+    coefficient: ValueT,
+    coefficient_lower: ValueT,
     probability: f64,
 }
 
-#[derive(Default)]
-struct Work {
-    fixed_terms: Vec<CausalTerm>,
-    weakening_terms: Vec<WeakeningTerm>,
+struct Work<ValueT> {
+    fixed_terms: Vec<CausalTerm<ValueT>>,
+    weakening_terms: Vec<WeakeningTerm<ValueT>>,
 }
 
-impl Clone for Work {
+impl<ValueT> Default for Work<ValueT> {
+    fn default() -> Self {
+        Self {
+            fixed_terms: Vec::default(),
+            weakening_terms: Vec::default(),
+        }
+    }
+}
+
+impl<ValueT> Clone for Work<ValueT> {
     fn clone(&self) -> Self {
         Self::default()
     }
 }
 
 #[derive(Clone)]
-pub struct Weaken {
-    work: Work,
+pub struct Weaken<ValueT> {
+    work: Work<ValueT>,
 }
 
-impl Weaken {
+impl<ValueT> Weaken<ValueT>
+where
+    ValueT: PrimInt + Unsigned + SubAssign + Sum + Debug,
+{
     pub fn new() -> Self {
         Self {
             work: Work::default(),
@@ -41,17 +54,17 @@ impl Weaken {
 
     pub fn call<'a>(
         &'a mut self,
-        constraint: &impl LinearConstraintTrait<Value = u64>,
-        can_reduce_to: impl Fn(Literal) -> Option<u64>,
+        constraint: &impl LinearConstraintTrait<Value = ValueT>,
+        can_reduce_to: impl Fn(Literal) -> Option<ValueT>,
         pb_engine: &PBEngine,
-    ) -> impl LinearConstraintTrait<Value = u64> + 'a {
+    ) -> impl LinearConstraintTrait<Value = ValueT> + 'a {
         let work = &mut self.work;
 
         work.fixed_terms.clear();
         work.weakening_terms.clear();
 
         // weaken する前の左辺値-右辺値の期待値
-        let mut initial_expectation = -(constraint.lower() as f64);
+        let mut initial_expectation = -constraint.lower().to_f64().unwrap();
         for (literal, coefficient) in constraint.iter_terms() {
             let probability = 1.0 - pb_engine.assignment_probability(!literal);
             if let Some(coefficient_lower) = can_reduce_to(literal)
@@ -70,7 +83,7 @@ impl Weaken {
                     probability,
                 });
             }
-            initial_expectation += coefficient as f64 * probability;
+            initial_expectation += coefficient.to_f64().unwrap() * probability;
         }
 
         // 係数が大きい順にソート
@@ -94,12 +107,12 @@ impl Weaken {
                 // term のリテラルを True に固定したと仮定して制約条件の下限と sup - lower の期待値を更新
                 let reduction = term.coefficient - term.coefficient_lower;
                 lower -= reduction;
-                expectation +=
-                    reduction as f64 * (1.0 - term.probability - sum_of_probability_of_saturatings);
+                expectation += reduction.to_f64().unwrap()
+                    * (1.0 - term.probability - sum_of_probability_of_saturatings);
                 while l < work.fixed_terms.len() {
                     let falsified_term = &work.fixed_terms[l];
                     if falsified_term.coefficient > lower {
-                        expectation -= (falsified_term.coefficient - lower) as f64
+                        expectation -= (falsified_term.coefficient - lower).to_f64().unwrap()
                             * falsified_term.probability;
                         sum_of_probability_of_saturatings += falsified_term.probability;
                         l += 1;
@@ -114,11 +127,11 @@ impl Weaken {
             }
         }
 
-        let lower = constraint.lower()
+        let lower: ValueT = constraint.lower()
             - work.weakening_terms[..best_k]
                 .iter()
                 .map(|term| term.coefficient - term.coefficient_lower)
-                .sum::<u64>();
+                .sum();
 
         let weakened_constraint = LinearConstraintView::new(
             work.fixed_terms
@@ -127,7 +140,7 @@ impl Weaken {
                 .chain(
                     work.weakening_terms[..best_k]
                         .iter()
-                        .filter(|term| term.coefficient_lower != 0)
+                        .filter(|term| term.coefficient_lower != ValueT::zero())
                         .map(move |term| (term.literal, min(term.coefficient_lower, lower))),
                 )
                 .chain(

@@ -1,7 +1,7 @@
 use either::Either;
-use num::{Integer, Num, Unsigned, integer::gcd};
-use std::cmp::min;
+use num::{Integer, Num, PrimInt, Unsigned, integer::gcd};
 use std::ops::AddAssign;
+use std::{cmp::min, fmt::Debug};
 
 use crate::{LinearConstraintTrait, LinearConstraintView, Literal, PBEngine};
 
@@ -23,15 +23,18 @@ pub fn drop_fixed_variable(
     );
 }
 
-pub fn divide_linear_constraint(
-    constraint: &impl LinearConstraintTrait<Value = u64>,
+pub fn divide_linear_constraint<ValueT>(
+    constraint: &impl LinearConstraintTrait<Value = ValueT>,
     divisor: f64,
-) -> impl LinearConstraintTrait<Value = f64> + '_ {
+) -> impl LinearConstraintTrait<Value = f64> + '_
+where
+    ValueT: PrimInt + Unsigned + Debug,
+{
     return LinearConstraintView::new(
         constraint
             .iter_terms()
-            .map(move |(literal, coefficient)| (literal, coefficient as f64 / divisor)),
-        constraint.lower() as f64 / divisor,
+            .map(move |(literal, coefficient)| (literal, coefficient.to_f64().unwrap() / divisor)),
+        constraint.lower().to_f64().unwrap() / divisor,
     );
 }
 
@@ -69,12 +72,15 @@ where
     return sup;
 }
 
-pub fn strengthen_integer_linear_constraint(
-    constraint: &impl LinearConstraintTrait<Value = u64>,
-) -> impl LinearConstraintTrait<Value = u64> {
+pub fn strengthen_integer_linear_constraint<ValueT>(
+    constraint: &impl LinearConstraintTrait<Value = ValueT>,
+) -> impl LinearConstraintTrait<Value = ValueT>
+where
+    ValueT: Integer + PrimInt + Unsigned + AddAssign + Debug,
+{
     let lower = constraint.lower();
 
-    let mut sum_of_unsaturating_coefficients = 0;
+    let mut sum_of_unsaturating_coefficients = ValueT::zero();
     for (_, coefficient) in constraint.iter_terms() {
         if coefficient < lower {
             sum_of_unsaturating_coefficients += coefficient;
@@ -86,7 +92,7 @@ pub fn strengthen_integer_linear_constraint(
             constraint
                 .iter_terms()
                 .filter(move |&(_, coefficient)| coefficient >= lower),
-            1,
+            ValueT::one(),
         ));
     } else {
         let gcd = calculate_gcd(
@@ -98,14 +104,14 @@ pub fn strengthen_integer_linear_constraint(
             constraint
                 .iter_terms()
                 .filter_map(move |(literal, coefficient)| {
-                    if coefficient != 0 {
-                        debug_assert!(min(coefficient, lower) % gcd == 0);
+                    if coefficient != ValueT::zero() {
+                        debug_assert!(min(coefficient, lower) % gcd == ValueT::zero());
                         Some((literal, min(coefficient, lower) / gcd))
                     } else {
                         None
                     }
                 }),
-            constraint.lower().div_ceil(gcd),
+            constraint.lower().div_ceil(&gcd),
         ));
     }
 }

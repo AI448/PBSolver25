@@ -4,7 +4,7 @@ use std::{
 };
 
 use either::Either;
-use num::Num;
+use num::{Integer, Num, NumCast, PrimInt, Unsigned};
 use utility::Map;
 
 use crate::{Boolean, Literal};
@@ -30,6 +30,18 @@ pub trait LinearConstraintTrait {
             self.iter_terms()
                 .map(move |(literal, coefficient)| (literal, coefficient * multipler)),
             self.lower() * multipler,
+        );
+    }
+
+    fn convert<ValueT>(&self) -> impl LinearConstraintTrait<Value = ValueT>
+    where
+        Self::Value: PrimInt,
+        ValueT: Integer + Unsigned + PrimInt + Debug + NumCast,
+    {
+        return LinearConstraintView::new(
+            self.iter_terms()
+                .map(|(literal, coefficient)| (literal, ValueT::from(coefficient).unwrap())),
+            ValueT::from(self.lower()).unwrap(),
         );
     }
 }
@@ -192,7 +204,7 @@ where
 
     pub fn replace_by_linear_constraint(
         &mut self,
-        linear_constraint: &impl LinearConstraintTrait<Value = ValueT>,
+        linear_constraint: impl LinearConstraintTrait<Value = ValueT>,
     ) {
         self.terms.clear();
         self.terms.extend(
@@ -215,7 +227,7 @@ where
         &mut self.lower
     }
 
-    pub fn add_assign(&mut self, reason_constraint: &impl LinearConstraintTrait<Value = ValueT>) {
+    pub fn add_assign(&mut self, reason_constraint: impl LinearConstraintTrait<Value = ValueT>) {
         self.lower += reason_constraint.lower();
         for (literal, coefficient) in reason_constraint.iter_terms() {
             if let Some(term) = self.terms.get_mut(literal.index()) {
