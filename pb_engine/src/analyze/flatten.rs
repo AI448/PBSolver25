@@ -59,18 +59,18 @@ impl FlattenConflictConstraint {
         );
 
         // weaken
-        let weakened_conflict_constraint = self.weaken.call(
-            conflict_constraint,
-            |literal| {
-                if causals.contains_key(!literal) {
-                    None
-                } else {
-                    Some(0)
-                }
-            },
-            engine,
-        );
-
+        // let weakened_conflict_constraint = self.weaken.call(
+        //     conflict_constraint,
+        //     |literal| {
+        //         if causals.contains_key(!literal) {
+        //             None
+        //         } else {
+        //             Some(0)
+        //         }
+        //     },
+        //     engine,
+        // );
+        let weakened_conflict_constraint = conflict_constraint;
         // 係数の範囲を算出
         let (_, max_coefficient) = Self::calculate_coefficient_range(&weakened_conflict_constraint);
         let min_causal_coefficient = weakened_conflict_constraint
@@ -84,7 +84,7 @@ impl FlattenConflictConstraint {
         // }
 
         let divisor = max(
-            max_coefficient / self.threshold as u128,
+            max_coefficient.div_ceil(self.threshold as u128),
             min_causal_coefficient,
         );
         eprintln!(
