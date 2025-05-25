@@ -76,45 +76,16 @@ impl Analyze {
         //     .insert(Literal::new(conflict_variable, Boolean::TRUE));
 
         // conflict_constraint を初期化
-        {
-            // 矛盾している制約条件の組を取得
-            let conflict_constraints =
-                conflict_explain_keys.map(|explain_key| engine.explain(explain_key));
-            // それぞれの係数を取得
-            let conflict_coefficients = [Boolean::FALSE, Boolean::TRUE].map(|value| {
-                conflict_constraints[value]
-                    .iter_terms()
-                    .find(|&(literal, _)| literal == Literal::new(conflict_variable, value))
-                    .unwrap()
-                    .1
-            });
-            // 各制約条件のconflicting_variable の係数で正規化したスラックを算出
-            let slack = [Boolean::FALSE, Boolean::TRUE].map(|value| {
-                self.identify_propagation_causals
-                    .call(
-                        &conflict_constraints[value],
-                        Literal::new(conflict_variable, value),
-                        |literal| Reverse(engine.get_assignment_order(literal.index())),
-                        engine,
-                    )
-                    .1
-                    / conflict_coefficients[value]
-            });
-            // スラックが大きい方を c, 小さい方を r とする
-            let (c, r) = if slack[0] >= slack[1] { (0, 1) } else { (1, 0) };
-            // 矛盾している制約条件を融合して conflict_constraint とする (r の方が丸められる)
-            let resolved_constraint = self.resolve.call(
-                &drop_fixed_variable(&conflict_constraints[c], engine),
-                &drop_fixed_variable(&conflict_constraints[r], engine),
-                conflict_variable,
-                engine,
-            );
-            self.conflict_constraint.replace(
-                self.flatten
-                    .call(&resolved_constraint, usize::MAX, engine)
-                    .convert(),
-            );
-        }
+        self.conflict_constraint.replace(
+            self.flatten
+                .call(&self.resolve.call(
+            &drop_fixed_variable(&engine.explain(conflict_explain_keys[Boolean::FALSE]), engine),
+            &drop_fixed_variable(&engine.explain(conflict_explain_keys[Boolean::TRUE]), engine),
+            conflict_variable,
+            engine,
+        ), usize::MAX, engine)
+                .convert(),
+        );
 
         let mut conflict_order = usize::MAX;
         loop {
@@ -167,6 +138,10 @@ impl Analyze {
                 .find_conflict_literal
                 .find(&self.conflict_constraint, engine);
 
+            // let conflict_literal = self.conflict_constraint.iter_terms().find(
+            //     |&(literal, _)| engine.is_false_at(literal, conflict_order)
+            // ).unwrap().0;
+
             conflict_order = engine.get_assignment_order(conflict_literal.index());
 
             let reason_constraint = {
@@ -191,6 +166,8 @@ impl Analyze {
                     .call(&resolved_constraint, conflict_order, engine)
                     .convert(),
             );
+
+            self.conflicting_assignments.insert(!conflict_literal);
         }
     }
 }
