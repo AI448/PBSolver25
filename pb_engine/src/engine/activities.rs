@@ -22,11 +22,11 @@ impl Activities {
         }
     }
 
-    pub fn add_variable(&mut self) {
+    pub fn add_variable(&mut self, initial_activity: f64) {
         let index = self.assignment_probabilities.len();
         self.assignment_probabilities.push([0.0, 0.0]);
-        self.activities.push(0.0);
-        self.unassigned_variables.insert(index, 0.0);
+        self.activities.push(initial_activity);
+        self.unassigned_variables.insert(index, initial_activity);
     }
 
     pub fn update_assignment_probabilities(&mut self, assignments: impl Iterator<Item = Literal>) {

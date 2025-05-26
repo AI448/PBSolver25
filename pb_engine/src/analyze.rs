@@ -78,12 +78,22 @@ impl Analyze {
         // conflict_constraint を初期化
         self.conflict_constraint.replace(
             self.flatten
-                .call(&self.resolve.call(
-            &drop_fixed_variable(&engine.explain(conflict_explain_keys[Boolean::FALSE]), engine),
-            &drop_fixed_variable(&engine.explain(conflict_explain_keys[Boolean::TRUE]), engine),
-            conflict_variable,
-            engine,
-        ), usize::MAX, engine)
+                .call(
+                    &self.resolve.call(
+                        &drop_fixed_variable(
+                            &engine.explain(conflict_explain_keys[Boolean::FALSE]),
+                            engine,
+                        ),
+                        &drop_fixed_variable(
+                            &engine.explain(conflict_explain_keys[Boolean::TRUE]),
+                            engine,
+                        ),
+                        conflict_variable,
+                        engine,
+                    ),
+                    usize::MAX,
+                    engine,
+                )
                 .convert(),
         );
 
@@ -134,13 +144,20 @@ impl Analyze {
                 };
             }
 
-            let conflict_literal = self
-                .find_conflict_literal
-                .find(&self.conflict_constraint, engine);
+            // let conflict_literal = self
+            //     .find_conflict_literal
+            //     .find(&self.conflict_constraint, engine);
 
-            // let conflict_literal = self.conflict_constraint.iter_terms().find(
-            //     |&(literal, _)| engine.is_false_at(literal, conflict_order)
-            // ).unwrap().0;
+            let conflict_literal = self
+                .conflict_constraint
+                .iter_terms()
+                .filter(|&(literal, _)| {
+                    engine.is_false_at(literal, conflict_order)
+                        && engine.get_reason(literal.index()).unwrap().is_propagation()
+                })
+                .max_by_key(|&(literal, _)| engine.get_assignment_order(literal.index()))
+                .unwrap()
+                .0;
 
             conflict_order = engine.get_assignment_order(conflict_literal.index());
 

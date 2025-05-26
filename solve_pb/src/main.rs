@@ -39,26 +39,43 @@ fn main() {
 fn solve(pb_problem: &PBProblem) -> Status {
     let start_time = std::time::Instant::now();
 
-    let mut pb_engine = PBEngine::new(100.0);
+    let mut pb_engine = PBEngine::new(20.0);
 
-    let max_index = pb_problem
-        .constraints
-        .iter()
-        .map(|constraint| {
-            constraint
-                .sum
-                .iter()
-                .map(|weighted_term| weighted_term.term.index)
-                .max()
-                .unwrap_or(0)
-        })
-        .max()
-        .unwrap_or(0);
+    {
+        let max_index = pb_problem
+            .constraints
+            .iter()
+            .map(|constraint| {
+                constraint
+                    .sum
+                    .iter()
+                    .map(|weighted_term| weighted_term.term.index)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0);
 
-    eprintln!("number_of_variables={}", max_index);
+        eprintln!("number_of_variables={}", max_index);
 
-    for _ in 0..max_index {
-        pb_engine.add_variable_with_initial_value(Boolean::FALSE);
+        let mut number_of_appearances = Vec::default();
+        number_of_appearances.resize(max_index, 0usize);
+        for constraint in pb_problem.constraints.iter() {
+            let n = match constraint.relational_operator {
+                RelationalOperator::GreaterOrEqual => 1,
+                RelationalOperator::Equal => 2,
+            };
+            for weighter_term in constraint.sum.iter() {
+                number_of_appearances[weighter_term.term.index - 1] += n;
+            }
+        }
+        let max_number_of_appearances = *number_of_appearances.iter().max().unwrap();
+        for i in 0..max_index {
+            pb_engine.add_variable_with_initial_value(
+                Boolean::FALSE,
+                number_of_appearances[i] as f64 / max_number_of_appearances as f64,
+            );
+        }
     }
 
     // pb_engine に制約条件を追加
@@ -150,9 +167,9 @@ fn solve(pb_problem: &PBProblem) -> Status {
         }
     }
 
-    eprintln!("   RESTART CONFLICT     CLEVEL      PLBD  #MONADIC    #COUNT   #LINEAR      TIME");
+    eprintln!("   RESTART CONFLICT    CLEVEL      PLBD     FIXED    #COUNT   #LINEAR      TIME");
 
-    let mut plbd_watcher = PLBDWatcher::new(10, 1000);
+    let mut plbd_watcher = PLBDWatcher::new(10, 10000);
     let mut analyzer = Analyze::new(1e-10);
     let mut calculate_plbd = CalculatePLBD::default();
 
@@ -166,14 +183,14 @@ fn solve(pb_problem: &PBProblem) -> Status {
         conflict_count,
         "",
         "",
-        pb_engine.number_of_monadic_clauses(),
+        pb_engine.number_of_assignments(),
         pb_engine.number_of_count_constraints(),
         pb_engine.number_of_integer_linear_constraints(),
         start_time.elapsed().as_secs_f64()
     );
 
     loop {
-        if start_time.elapsed() > std::time::Duration::from_secs(60) {
+        if start_time.elapsed() > std::time::Duration::from_secs(600) {
             return Status::Indefinite;
         }
 
@@ -229,7 +246,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                 conflict_count,
                 conflict_level,
                 plbd,
-                pb_engine.number_of_monadic_clauses(),
+                pb_engine.number_of_fixed(),
                 pb_engine.number_of_count_constraints(),
                 pb_engine.number_of_integer_linear_constraints(),
                 start_time.elapsed().as_secs_f64()
@@ -253,8 +270,9 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             return Status::Satisfiable;
-        } else if conflict_count >= previous_restart_timestamp + 20
-            && plbd_watcher.lower_tail_probability() > 0.7
+        } else if conflict_count >= previous_restart_timestamp + 10000
+            || (conflict_count >= previous_restart_timestamp + 20
+                && plbd_watcher.lower_tail_probability() > 0.6)
         {
             restart_count += 1;
             previous_restart_timestamp = conflict_count;

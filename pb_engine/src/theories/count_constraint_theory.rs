@@ -121,7 +121,7 @@ impl TheoryTrait for CountConstraintTheory {
         let backjump_order = decision_stack.order_range(backjump_level).end;
         assert!(backjump_order <= self.number_of_evaluated_assignments);
         self.number_of_evaluated_assignments = backjump_order;
-        self.backjump_count += 1;
+        // self.backjump_count += 1;
         self.activity_increase_value /= 1.0 - 1.0 / self.activity_time_constant;
 
         if backjump_level == 0 && self.backjump_count > self.reducing_backjump_count {
@@ -130,13 +130,13 @@ impl TheoryTrait for CountConstraintTheory {
             let mut rows = Vec::default();
             for (row_id, row) in self.rows.iter_mut().enumerate() {
                 row.activity /= self.activity_increase_value;
-                if row.state == RowState::Learnt && row.plbd >= 2 {
+                if row.state == RowState::Learnt && row.plbd > 2 {
                     rows.push((row_id, row.activity));
                 }
             }
             self.activity_increase_value = 1.0;
             rows.sort_unstable_by(|lhs, rhs| rhs.1.partial_cmp(&lhs.1).unwrap());
-            for &(row_id, _) in rows.iter().skip(max(1000, rows.len() / 2)) {
+            for &(row_id, _) in rows.iter().skip(max(1000, rows.len() * 2)) {
                 let row = &mut self.rows[row_id];
                 debug_assert!(row.state == RowState::Learnt);
                 row.state = RowState::Deleted;
@@ -164,6 +164,10 @@ where
     ) -> Result<(), usize> {
         if constraint.lower() == 0 {
             return Ok(());
+        }
+
+        if is_learnt {
+            self.backjump_count += 1;
         }
 
         let mut literals = Vec::from_iter(constraint.iter_terms());

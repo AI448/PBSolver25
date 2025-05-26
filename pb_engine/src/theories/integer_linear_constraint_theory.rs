@@ -160,7 +160,7 @@ impl TheoryTrait for IntegerLinearConstraintTheory {
             let mut rows = Vec::default();
             for (row_id, row) in self.rows.iter_mut().enumerate() {
                 row.activity /= self.activity_increase_value;
-                if row.state == RowState::Learnt && row.min_plbd >= 2 {
+                if row.state == RowState::Learnt && row.min_plbd > 2 {
                     rows.push((row_id, row.activity));
                 }
             }

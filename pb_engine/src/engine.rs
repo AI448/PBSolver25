@@ -177,12 +177,20 @@ impl PBEngine {
             .number_of_constraints();
     }
 
-    pub fn add_variable_with_initial_value(&mut self, initial_value: Boolean) {
+    pub fn add_variable_with_initial_value(
+        &mut self,
+        initial_value: Boolean,
+        initial_activity: f64,
+    ) {
         self.decision_stack.add_variable(initial_value);
-        self.activities.add_variable();
+        self.activities.add_variable(initial_activity);
         self.monadic_clause_theory.add_variable();
         self.count_constraint_theory.add_variable();
         self.integer_linear_constraint_theory.add_variable();
+    }
+
+    pub fn number_of_fixed(&self) -> usize {
+        self.decision_stack.order_range(0).end
     }
 
     pub fn add_monadic_clause(&mut self, monadic_clause: MonadicClause, is_learnt: bool) {

@@ -52,12 +52,12 @@ where
         }
     }
 
-    pub fn call<'a>(
-        &'a mut self,
-        constraint: &impl LinearConstraintTrait<Value = ValueT>,
+    pub fn call(
+        &mut self,
+        constraint: impl LinearConstraintTrait<Value = ValueT>,
         can_reduce_to: impl Fn(Literal) -> Option<ValueT>,
         pb_engine: &PBEngine,
-    ) -> impl LinearConstraintTrait<Value = ValueT> + 'a {
+    ) -> impl LinearConstraintTrait<Value = ValueT> + '_ {
         let work = &mut self.work;
 
         work.fixed_terms.clear();

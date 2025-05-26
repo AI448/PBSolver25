@@ -226,14 +226,14 @@ where
         }
     }
 
-    pub fn calculate(
-        &mut self,
+    pub fn calculate<'a>(
+        &'a mut self,
         constraint: impl LinearConstraintTrait<Value = ValueT>,
         divisor: ValueT,
         is_causal: impl Fn(Literal) -> bool,
         get_anticoefficient: impl Fn(Literal) -> f64,
         engine: &PBEngine,
-    ) -> impl LinearConstraintTrait<Value = ValueT> + '_ {
+    ) -> impl LinearConstraintTrait<Value = ValueT> + 'a {
         let work = &mut self.work;
 
         work.terms.clear();
@@ -248,58 +248,60 @@ where
             } else if is_causal(literal) {
                 // 切り上げる
                 rounding = Rounding::Up;
-                switching_priority = {
-                    let anticoefficient = get_anticoefficient(literal);
-                    // 切り上げた場合の期待値
-                    let ceiled_coefficient = coefficient.div_ceil(&divisor).to_f64().unwrap();
-                    let before_experiment = if ceiled_coefficient > anticoefficient {
-                        (ceiled_coefficient - anticoefficient)
-                            * (1.0 - engine.assignment_probability(!literal))
-                    } else {
-                        (anticoefficient - ceiled_coefficient)
-                            * (1.0 - engine.assignment_probability(literal))
-                    } + f64::min(ceiled_coefficient, anticoefficient);
-                    // 切り下げた場合の期待値
-                    let floored_coefficient = (coefficient / divisor).to_f64().unwrap();
-                    let after_experiment = if floored_coefficient > anticoefficient {
-                        (floored_coefficient - anticoefficient)
-                            * (1.0 - engine.assignment_probability(!literal))
-                    } else {
-                        (anticoefficient - floored_coefficient)
-                            * (1.0 - engine.assignment_probability(literal))
-                    } + f64::min(floored_coefficient, anticoefficient);
-                    // 期待値の減少量を priority とする
-                    before_experiment - after_experiment
-                };
+                // switching_priority = {
+                //     let anticoefficient = get_anticoefficient(literal);
+                //     // 切り上げた場合の期待値
+                //     let ceiled_coefficient = coefficient.div_ceil(&divisor).to_f64().unwrap();
+                //     let before_experiment = if ceiled_coefficient > anticoefficient {
+                //         (ceiled_coefficient - anticoefficient)
+                //             * (1.0 - engine.assignment_probability(!literal))
+                //     } else {
+                //         (anticoefficient - ceiled_coefficient)
+                //             * (1.0 - engine.assignment_probability(literal))
+                //     } + f64::min(ceiled_coefficient, anticoefficient);
+                //     // 切り下げた場合の期待値
+                //     let floored_coefficient = (coefficient / divisor).to_f64().unwrap();
+                //     let after_experiment = if floored_coefficient > anticoefficient {
+                //         (floored_coefficient - anticoefficient)
+                //             * (1.0 - engine.assignment_probability(!literal))
+                //     } else {
+                //         (anticoefficient - floored_coefficient)
+                //             * (1.0 - engine.assignment_probability(literal))
+                //     } + f64::min(floored_coefficient, anticoefficient);
+                //     // 期待値の減少量を priority とする
+                //     before_experiment - after_experiment
+                // };
+                switching_priority = -engine.activity(literal.index());
             } else {
                 // 切り下げる
                 rounding = Rounding::Down;
-                switching_priority = {
-                    let anticoefficient = get_anticoefficient(literal);
-                    // 切り下げた場合の期待値
-                    let floored_coefficient = (coefficient / divisor).to_f64().unwrap();
-                    let before_experiment = if floored_coefficient >= anticoefficient {
-                        (floored_coefficient - anticoefficient)
-                            * (1.0 - engine.assignment_probability(!literal))
-                    } else {
-                        (anticoefficient - floored_coefficient)
-                            * (1.0 - engine.assignment_probability(literal))
-                    } + f64::min(floored_coefficient, anticoefficient);
-                    // 切り上げた場合の期待値
-                    let ceiled_coefficient = ((coefficient + divisor - ValueT::one()) / divisor)
-                        .to_f64()
-                        .unwrap();
-                    let after_experiment = if ceiled_coefficient >= anticoefficient {
-                        (ceiled_coefficient - anticoefficient)
-                            * (1.0 - engine.assignment_probability(!literal))
-                    } else {
-                        (anticoefficient - ceiled_coefficient)
-                            * (1.0 - engine.assignment_probability(literal))
-                    } + f64::min(ceiled_coefficient, anticoefficient)
-                        - 1.0;
-                    // 期待値の減少量を priority とする
-                    before_experiment - after_experiment
-                };
+                // switching_priority = {
+                //     let anticoefficient = get_anticoefficient(literal);
+                //     // 切り下げた場合の期待値
+                //     let floored_coefficient = (coefficient / divisor).to_f64().unwrap();
+                //     let before_experiment = if floored_coefficient >= anticoefficient {
+                //         (floored_coefficient - anticoefficient)
+                //             * (1.0 - engine.assignment_probability(!literal))
+                //     } else {
+                //         (anticoefficient - floored_coefficient)
+                //             * (1.0 - engine.assignment_probability(literal))
+                //     } + f64::min(floored_coefficient, anticoefficient);
+                //     // 切り上げた場合の期待値
+                //     let ceiled_coefficient = ((coefficient + divisor - ValueT::one()) / divisor)
+                //         .to_f64()
+                //         .unwrap();
+                //     let after_experiment = if ceiled_coefficient >= anticoefficient {
+                //         (ceiled_coefficient - anticoefficient)
+                //             * (1.0 - engine.assignment_probability(!literal))
+                //     } else {
+                //         (anticoefficient - ceiled_coefficient)
+                //             * (1.0 - engine.assignment_probability(literal))
+                //     } + f64::min(ceiled_coefficient, anticoefficient)
+                //         - 1.0;
+                //     // 期待値の減少量を priority とする
+                //     before_experiment - after_experiment
+                // };
+                switching_priority = engine.activity(literal.index());
                 lower = lower - coefficient % divisor;
             }
             work.terms.push(Term2 {
