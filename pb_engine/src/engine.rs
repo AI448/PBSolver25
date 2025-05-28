@@ -3,18 +3,16 @@ mod assignment_queue;
 mod reason;
 
 use crate::{
-    CountConstraint, CountConstraintTrait, LinearConstraint, LinearConstraintTrait, MonadicClause,
-    decision_stack::DecisionStack,
-    theories::{
+    collections::LiteralArray, decision_stack::DecisionStack, theories::{
         CountConstraintExplainKey, CountConstraintTheory, IntegerLinearConstraintExplainKey,
         IntegerLinearConstraintTheory, MonadicClauseExplainKey, MonadicClauseTheory,
         TheoryAddConstraintTrait, TheoryTrait,
-    },
-    types::{Boolean, Literal},
+    }, types::{Boolean, Literal}, CountConstraint, CountConstraintTrait, LinearConstraint, LinearConstraintTrait, MonadicClause
 };
 use activities::Activities;
 use assignment_queue::AssignmentQueue;
 use either::Either;
+use utility::Map;
 use std::ops::Deref;
 
 pub use reason::Reason;
@@ -115,6 +113,7 @@ pub struct PBEngine {
     integer_linear_constraint_theory: IntegerLinearConstraintTheory,
     assignment_queue: AssignmentQueue<PBExplainKey>,
     state: PBState,
+    variable_map: Map<f64>,
 }
 
 impl Deref for PBEngine {
@@ -134,6 +133,7 @@ impl PBEngine {
             integer_linear_constraint_theory: IntegerLinearConstraintTheory::new(1e4),
             assignment_queue: AssignmentQueue::default(),
             state: PBState::Noconflict,
+            variable_map: Map::default()
         }
     }
     pub fn state(&self) -> PBState {
@@ -150,9 +150,27 @@ impl PBEngine {
     pub fn update_conflict_probabilities(
         &mut self,
         conflict_assignments: impl Iterator<Item = Literal>,
+        backjump_level: usize
     ) {
-        self.activities
-            .update_conflict_probabilities(conflict_assignments);
+        // self.activities
+        //     .update_conflict_probabilities(conflict_assignments);
+        self.variable_map.clear();
+        for literal in conflict_assignments {
+            self.variable_map.insert(literal.index(), 1.0);
+        }
+        for literal in (0..self.decision_stack.number_of_assignments()).map(|order| self.decision_stack.get_assignment(order)) {
+            if !self.variable_map.contains_key(literal.index()) {
+                self.variable_map.insert(literal.index(), 0.0);
+            }
+        }
+        // for literal in (self.decision_stack.order_range(backjump_level).end..self.decision_stack.number_of_assignments()).map(|order| self.decision_stack.get_assignment(order)) {
+        //     if !self.variable_map.contains_key(literal.index()) {
+        //         self.variable_map.insert(literal.index(), 0.0);
+        //     }
+        // }
+        for (&index, &value) in self.variable_map.iter() {
+            self.activities.update_activity(index, value);
+        }
     }
 
     pub fn assignment_probability(&self, literal: Literal) -> f64 {

@@ -54,7 +54,11 @@ def execute(instance_path: Path, output_dir_path: Path):
             )
             seconds = time.time() - start_time
             if result.returncode == 0:
-                return (input_file_path, result.stdout.rstrip(), seconds)
+                status = [line for line in result.stdout.splitlines() if line.startswith("s ")]
+                if len(status) == 0:
+                    return (input_file_path, "FAILURE", seconds)
+                else:
+                    return (input_file_path, status[0][2:], seconds)
             else:
                 return (input_file_path, "FAILURE", seconds)
 

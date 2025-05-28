@@ -52,18 +52,24 @@ pub struct Variable {
 
 pub fn read_opb(
     input: &mut std::io::BufReader<impl std::io::Read>,
-) -> Result<PBProblem, std::io::Error> {
+) -> Option<PBProblem> {
     let mut constraints = Vec::default();
 
     let mut line = String::default();
     loop {
         line.clear();
-        let bytes = input.read_line(&mut line)?;
+        let Ok(bytes) = input.read_line(&mut line) else {
+            return None;
+        };
         if bytes == 0 {
             break;
         }
-        let (residual, comment_or_constraint) = comment_or_constraint(line.as_str()).unwrap();
-        assert!(residual == "", "{}", residual);
+        let Ok((residual, comment_or_constraint)) = comment_or_constraint(line.as_str()) else {
+            return None;
+        };
+        if residual != "" {
+            return None;
+        }
 
         if let CommentOrConstraint::Constraint(constraint) = comment_or_constraint {
             constraints.push(constraint);
@@ -71,7 +77,7 @@ pub fn read_opb(
     }
 
     // PBProblem を構築して返す
-    return Ok(PBProblem { constraints });
+    return Some(PBProblem { constraints });
 }
 
 fn sequence_of_comment_or_constraint(input: &str) -> IResult<&str, Vec<CommentOrConstraint>> {

@@ -14,32 +14,46 @@ use plbd_watcher::PLBDWatcher;
 use read_opb::{PBProblem, RelationalOperator, read_opb};
 
 enum Status {
-    Satisfiable,
+    Satisfiable{solution: Vec<Boolean>},
     Unsatisfiable,
     Indefinite,
 }
 
 fn main() {
-    let pb_problem = read_opb(&mut BufReader::new(std::io::stdin())).unwrap();
-
-    let status = solve(&pb_problem);
-    match status {
-        Status::Satisfiable => {
-            println!("SATISFIABLE")
+    if let Some(pb_problem) = read_opb(&mut BufReader::new(std::io::stdin())) {
+        let status = solve(&pb_problem);
+        match status {
+            Status::Satisfiable{solution} => {
+                println!("s SATISFIABLE");
+                print!("v");
+                for (index, &value) in solution.iter().enumerate() {
+                    match value {
+                        Boolean::TRUE => {
+                            print!(" {}", index + 1);
+                        },
+                        Boolean::FALSE => {
+                            print!(" -{}", index + 1);
+                        }
+                    }
+                }
+                println!("");
+            }
+            Status::Unsatisfiable => {
+                println!("s UNSATISFIABLE");
+            }
+            Status::Indefinite => {
+                println!("s UNKNOWN");
+            }
         }
-        Status::Unsatisfiable => {
-            println!("UNSATISFIABLE")
-        }
-        Status::Indefinite => {
-            println!("TIMEOUT")
-        }
+    } else {
+        println!("s UNSUPPORTED");
     }
 }
 
 fn solve(pb_problem: &PBProblem) -> Status {
     let start_time = std::time::Instant::now();
 
-    let mut pb_engine = PBEngine::new(20.0);
+    let mut pb_engine = PBEngine::new(10.0);
 
     {
         let max_index = pb_problem
@@ -58,22 +72,23 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
         eprintln!("number_of_variables={}", max_index);
 
-        let mut number_of_appearances = Vec::default();
-        number_of_appearances.resize(max_index, 0usize);
-        for constraint in pb_problem.constraints.iter() {
-            let n = match constraint.relational_operator {
-                RelationalOperator::GreaterOrEqual => 1,
-                RelationalOperator::Equal => 2,
-            };
-            for weighter_term in constraint.sum.iter() {
-                number_of_appearances[weighter_term.term.index - 1] += n;
-            }
-        }
-        let max_number_of_appearances = *number_of_appearances.iter().max().unwrap();
+        // let mut number_of_appearances = Vec::default();
+        // number_of_appearances.resize(max_index, 0usize);
+        // for constraint in pb_problem.constraints.iter() {
+        //     let n = match constraint.relational_operator {
+        //         RelationalOperator::GreaterOrEqual => 1,
+        //         RelationalOperator::Equal => 2,
+        //     };
+        //     for weighter_term in constraint.sum.iter() {
+        //         number_of_appearances[weighter_term.term.index - 1] += n;
+        //     }
+        // }
+        // let max_number_of_appearances = *number_of_appearances.iter().max().unwrap();
         for i in 0..max_index {
             pb_engine.add_variable_with_initial_value(
                 Boolean::FALSE,
-                number_of_appearances[i] as f64 / max_number_of_appearances as f64,
+                // number_of_appearances[i] as f64 / max_number_of_appearances as f64,
+                0.0
             );
         }
     }
@@ -190,7 +205,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
     );
 
     loop {
-        if start_time.elapsed() > std::time::Duration::from_secs(600) {
+        if start_time.elapsed() > std::time::Duration::from_secs(60) {
             return Status::Indefinite;
         }
 
@@ -230,9 +245,10 @@ fn solve(pb_problem: &PBProblem) -> Status {
                 &pb_engine,
             );
             plbd_watcher.add(plbd);
+            // plbd_watcher.add(pb_engine.decision_level());
             // eprintln!("plbd={} long_term_mean={}, long_term_variance={}, short_term_mean={}, p={}", plbd, plbd_watcher.long_term_average.mean(), plbd_watcher.long_term_average.variance(), plbd_watcher.short_term_average.mean(), plbd_watcher.lower_tail_probability());
 
-            pb_engine.update_conflict_probabilities(conflicting_assignments);
+            pb_engine.update_conflict_probabilities(conflicting_assignments, backjump_level);
 
             let conflict_level = pb_engine.decision_level();
 
@@ -268,8 +284,8 @@ fn solve(pb_problem: &PBProblem) -> Status {
                     constraint.rhs
                 );
             }
-
-            return Status::Satisfiable;
+            let solution = (0..pb_engine.number_of_variables()).map(|index| pb_engine.get_value(index)).collect();
+            return Status::Satisfiable{solution};
         } else if conflict_count >= previous_restart_timestamp + 10000
             || (conflict_count >= previous_restart_timestamp + 20
                 && plbd_watcher.lower_tail_probability() > 0.6)
@@ -281,7 +297,6 @@ fn solve(pb_problem: &PBProblem) -> Status {
                 pb_engine.backjump(0);
             }
 
-            // TODO reduce
         } else {
             pb_engine.decide();
         }
