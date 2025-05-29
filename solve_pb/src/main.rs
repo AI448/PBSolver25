@@ -3,11 +3,11 @@
 mod plbd_watcher;
 mod read_opb;
 
-use std::{io::BufReader, time::Duration, usize};
+use std::{io::BufReader, usize};
 
 use pb_engine::{
     Analyze, AnalyzeResult, Boolean, CalculatePLBD, CountConstraintView, LinearConstraintTrait,
-    LinearConstraintView, Literal, MonadicClause, PBConstraint, PBEngine, PBState,
+    LinearConstraintView, Literal, MonadicClause, PBEngine, PBState,
     strengthen_integer_linear_constraint,
 };
 use plbd_watcher::PLBDWatcher;
@@ -29,10 +29,10 @@ fn main() {
                 for (index, &value) in solution.iter().enumerate() {
                     match value {
                         Boolean::TRUE => {
-                            print!(" {}", index + 1);
+                            print!(" x{}", index + 1);
                         },
                         Boolean::FALSE => {
-                            print!(" -{}", index + 1);
+                            print!(" -x{}", index + 1);
                         }
                     }
                 }
@@ -205,9 +205,9 @@ fn solve(pb_problem: &PBProblem) -> Status {
     );
 
     loop {
-        if start_time.elapsed() > std::time::Duration::from_secs(60) {
-            return Status::Indefinite;
-        }
+        // if start_time.elapsed() > std::time::Duration::from_secs(600) {
+        //     return Status::Indefinite;
+        // }
 
         pb_engine.propagate();
         // eprintln!("{}", pb_engine.number_of_assignments());
