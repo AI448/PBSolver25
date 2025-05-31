@@ -70,7 +70,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             .max()
             .unwrap_or(0);
 
-        eprintln!("number_of_variables={}", max_index);
+        // eprintln!("number_of_variables={}", max_index);
 
         // let mut number_of_appearances = Vec::default();
         // number_of_appearances.resize(max_index, 0usize);
@@ -182,7 +182,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
         }
     }
 
-    eprintln!("   RESTART CONFLICT    CLEVEL      PLBD     FIXED    #COUNT   #LINEAR      TIME");
+    // eprintln!("   RESTART CONFLICT      PLBD     FIXED    #COUNT   #LINEAR      TIME");
 
     let mut plbd_watcher = PLBDWatcher::new(10, 10000);
     let mut analyzer = Analyze::new(1e-10);
@@ -192,17 +192,16 @@ fn solve(pb_problem: &PBProblem) -> Status {
     let mut restart_count: usize = 0;
     let mut previous_restart_timestamp = 0;
 
-    eprintln!(
-        "{:9} {:9} {:9} {:9} {:9} {:9} {:9} {:9}",
-        restart_count,
-        conflict_count,
-        "",
-        "",
-        pb_engine.number_of_assignments(),
-        pb_engine.number_of_count_constraints(),
-        pb_engine.number_of_integer_linear_constraints(),
-        start_time.elapsed().as_secs_f64()
-    );
+    // eprintln!(
+    //     "{:9} {:9} {:9} {:9} {:9} {:9} {:9}",
+    //     restart_count,
+    //     conflict_count,
+    //     "",
+    //     pb_engine.number_of_assignments(),
+    //     pb_engine.number_of_count_constraints(),
+    //     pb_engine.number_of_integer_linear_constraints(),
+    //     start_time.elapsed().as_secs_f64()
+    // );
 
     loop {
         // if start_time.elapsed() > std::time::Duration::from_secs(600) {
@@ -256,17 +255,18 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
             add_integer_linear_constraint(&mut pb_engine, &learnt_constraint, true);
 
-            eprintln!(
-                "{:9} {:9} {:9} {:9} {:9} {:9} {:9} {:9}",
-                restart_count,
-                conflict_count,
-                conflict_level,
-                plbd,
-                pb_engine.number_of_fixed(),
-                pb_engine.number_of_count_constraints(),
-                pb_engine.number_of_integer_linear_constraints(),
-                start_time.elapsed().as_secs_f64()
-            );
+            // if conflict_count % 10000 == 0 {
+            //     eprintln!(
+            //         "{:9} {:9} {:9.1} {:9} {:9} {:9} {:9}",
+            //         restart_count,
+            //         conflict_count,
+            //         plbd_watcher.long_term_average.mean(),
+            //         pb_engine.number_of_fixed(),
+            //         pb_engine.number_of_count_constraints(),
+            //         pb_engine.number_of_integer_linear_constraints(),
+            //         start_time.elapsed().as_secs_f64()
+            //     );
+            // }
         } else if pb_engine.number_of_assignments() == pb_engine.number_of_variables() {
             for constraint in pb_problem.constraints.iter() {
                 let mut lhs = 0;

@@ -125,7 +125,7 @@ impl TheoryTrait for CountConstraintTheory {
         self.activity_increase_value /= 1.0 - 1.0 / self.activity_time_constant;
 
         if backjump_level == 0 && self.backjump_count > self.reducing_backjump_count {
-            eprintln!("REDUCE");
+            // eprintln!("REDUCE");
             self.reducing_backjump_count = self.backjump_count + 10000 + self.backjump_count / 10;
             let mut rows = Vec::default();
             for (row_id, row) in self.rows.iter_mut().enumerate() {

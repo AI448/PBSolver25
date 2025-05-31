@@ -87,10 +87,10 @@ impl FlattenConflictConstraint {
             max_coefficient.div_ceil(self.threshold as u128),
             min_causal_coefficient,
         );
-        eprintln!(
-            "FLATTEN max_coefficient={}, min_causal_coefficient={}, divisor={}",
-            max_coefficient, min_causal_coefficient, divisor
-        );
+        // eprintln!(
+        //     "FLATTEN max_coefficient={}, min_causal_coefficient={}, divisor={}",
+        //     max_coefficient, min_causal_coefficient, divisor
+        // );
 
         // round
         let rounded_conflict_constraint = self.round.calculate(
