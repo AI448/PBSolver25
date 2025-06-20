@@ -5,6 +5,7 @@ resolver = "3"
 members = [
     "utility",
     "pb_engine",
+    "pb_engine2",
     "solve_pb"
 ]
 

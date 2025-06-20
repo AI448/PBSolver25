@@ -5,16 +5,15 @@ mod read_opb;
 
 use std::{io::BufReader, usize};
 
-use pb_engine::{
-    Analyze, AnalyzeResult, Boolean, CalculatePLBD, CountConstraintView, LinearConstraintTrait,
-    LinearConstraintView, Literal, MonadicClause, PBEngine, PBState,
-    strengthen_integer_linear_constraint,
+use pb_engine2::{
+    Analyze, AnalyzeResult, Boolean, CalculatePLBD, LinearConstraintTrait, LinearConstraintView,
+    Literal, PBEngine, PBState,
 };
 use plbd_watcher::PLBDWatcher;
 use read_opb::{PBProblem, RelationalOperator, read_opb};
 
 enum Status {
-    Satisfiable{solution: Vec<Boolean>},
+    Satisfiable { solution: Vec<Boolean> },
     Unsatisfiable,
     Indefinite,
 }
@@ -23,14 +22,14 @@ fn main() {
     if let Some(pb_problem) = read_opb(&mut BufReader::new(std::io::stdin())) {
         let status = solve(&pb_problem);
         match status {
-            Status::Satisfiable{solution} => {
+            Status::Satisfiable { solution } => {
                 println!("s SATISFIABLE");
                 print!("v");
                 for (index, &value) in solution.iter().enumerate() {
                     match value {
                         Boolean::TRUE => {
                             print!(" x{}", index + 1);
-                        },
+                        }
                         Boolean::FALSE => {
                             print!(" -x{}", index + 1);
                         }
@@ -53,7 +52,7 @@ fn main() {
 fn solve(pb_problem: &PBProblem) -> Status {
     let start_time = std::time::Instant::now();
 
-    let mut pb_engine = PBEngine::new(10.0);
+    let mut pb_engine = PBEngine::<u64>::new();
 
     {
         let max_index = pb_problem
@@ -85,18 +84,14 @@ fn solve(pb_problem: &PBProblem) -> Status {
         // }
         // let max_number_of_appearances = *number_of_appearances.iter().max().unwrap();
         for i in 0..max_index {
-            pb_engine.add_variable_with_initial_value(
-                Boolean::FALSE,
-                // number_of_appearances[i] as f64 / max_number_of_appearances as f64,
-                0.0
-            );
+            pb_engine.add_variable();
         }
     }
 
     // pb_engine に制約条件を追加
     {
         fn add_constraint(
-            pb_engine: &mut PBEngine,
+            pb_engine: &mut PBEngine<u64>,
             terms: impl Iterator<Item = (usize, i64)> + Clone,
             lower: i64,
         ) -> Result<(), ()> {
@@ -113,21 +108,13 @@ fn solve(pb_problem: &PBProblem) -> Status {
             // 項を (Literal, u64) に変換
             let pb_lower = (lower as i128 - sum_of_negative_coefficients) as u128;
             let pb_terms =
-                terms
-                    .filter(|&(_, coefficient)| coefficient != 0)
-                    .map(|(index, coefficient)| {
-                        if coefficient > 0 {
-                            (
-                                Literal::new(index, pb_engine::Boolean::TRUE),
-                                coefficient as u64,
-                            )
-                        } else {
-                            (
-                                Literal::new(index, pb_engine::Boolean::FALSE),
-                                (-coefficient) as u64,
-                            )
-                        }
-                    });
+                terms.filter(|&(_, coefficient)| coefficient != 0).map(|(index, coefficient)| {
+                    if coefficient > 0 {
+                        (Literal::new(index, Boolean::TRUE), coefficient as u64)
+                    } else {
+                        (Literal::new(index, Boolean::FALSE), (-coefficient) as u64)
+                    }
+                });
 
             // TODO 以下の処理は，現状の PBEngine のラッパーを作ってそこで実装したほうが良い
             // そもそも PBConstraint は外に見せない(explain の戻り値の実装だけに使う)ほうがいいかも
@@ -143,11 +130,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             // 制約を追加
-            add_integer_linear_constraint(
-                pb_engine,
-                &LinearConstraintView::new(pb_terms, pb_lower as u64),
-                false,
-            );
+            pb_engine.add_constraint(&LinearConstraintView::new(pb_terms, pb_lower as u64), false);
 
             return Ok(());
         }
@@ -207,161 +190,154 @@ fn solve(pb_problem: &PBProblem) -> Status {
         // if start_time.elapsed() > std::time::Duration::from_secs(600) {
         //     return Status::Indefinite;
         // }
-
-        pb_engine.propagate();
-        // eprintln!("{}", pb_engine.number_of_assignments());
-
-        if let PBState::Conflict {
-            index: conflict_variable,
-            explain_keys: conflict_explain_keys,
-        } = pb_engine.state()
-        {
-            conflict_count += 1;
-
-            if pb_engine.decision_level() == 0 {
-                return Status::Unsatisfiable;
+        match pb_engine.state() {
+            PBState::BackjumpRequired { backjump_level } => {
+                eprintln!("BACKJUMP_LEVEL={}", backjump_level);
+                pb_engine.backjump(backjump_level);
             }
+            PBState::Conflict { explain_key } => {
+                conflict_count += 1;
 
-            pb_engine.update_assignment_probabilities();
+                // if conflict_count % 10000 == 0 {
+                //     eprintln!(
+                //         "{:9} {:9} {:9.1} {:9} {:9} {:9} {:9}",
+                //         restart_count,
+                //         conflict_count,
+                //         plbd_watcher.long_term_average.mean(),
+                //         pb_engine.number_of_fixed(),
+                //         pb_engine.number_of_count_constraints(),
+                //         pb_engine.number_of_integer_linear_constraints(),
+                //         start_time.elapsed().as_secs_f64()
+                //     );
+                // }
 
-            let analyze_result =
-                analyzer.call(conflict_variable, conflict_explain_keys, &pb_engine);
-
-            let AnalyzeResult::Backjumpable {
-                backjump_level,
-                learnt_constraint,
-                conflicting_assignments,
-            } = analyze_result
-            else {
-                return Status::Unsatisfiable;
-            };
-
-            let plbd = calculate_plbd.calculate(
-                learnt_constraint
-                    .iter_terms()
-                    .map(|(literal, _)| !literal)
-                    .filter(|&literal| pb_engine.is_true(literal)),
-                &pb_engine,
-            );
-            plbd_watcher.add(plbd);
-            // plbd_watcher.add(pb_engine.decision_level());
-            // eprintln!("plbd={} long_term_mean={}, long_term_variance={}, short_term_mean={}, p={}", plbd, plbd_watcher.long_term_average.mean(), plbd_watcher.long_term_average.variance(), plbd_watcher.short_term_average.mean(), plbd_watcher.lower_tail_probability());
-
-            pb_engine.update_conflict_probabilities(conflicting_assignments, backjump_level);
-
-            let conflict_level = pb_engine.decision_level();
-
-            pb_engine.backjump(backjump_level);
-
-            add_integer_linear_constraint(&mut pb_engine, &learnt_constraint, true);
-
-            // if conflict_count % 10000 == 0 {
-            //     eprintln!(
-            //         "{:9} {:9} {:9.1} {:9} {:9} {:9} {:9}",
-            //         restart_count,
-            //         conflict_count,
-            //         plbd_watcher.long_term_average.mean(),
-            //         pb_engine.number_of_fixed(),
-            //         pb_engine.number_of_count_constraints(),
-            //         pb_engine.number_of_integer_linear_constraints(),
-            //         start_time.elapsed().as_secs_f64()
-            //     );
-            // }
-        } else if pb_engine.number_of_assignments() == pb_engine.number_of_variables() {
-            for constraint in pb_problem.constraints.iter() {
-                let mut lhs = 0;
-                for term in constraint.sum.iter() {
-                    if pb_engine.get_value(term.term.index - 1) == Boolean::TRUE {
-                        lhs += term.weight;
-                    }
+                if pb_engine.decision_level() == 0 {
+                    return Status::Unsatisfiable;
                 }
-                assert!(lhs >= constraint.rhs, "{} {}", lhs, constraint.rhs);
-                assert!(
-                    constraint.relational_operator == RelationalOperator::GreaterOrEqual
-                        || lhs <= constraint.rhs,
-                    "{} {}",
-                    lhs,
-                    constraint.rhs
-                );
-            }
-            let solution = (0..pb_engine.number_of_variables()).map(|index| pb_engine.get_value(index)).collect();
-            return Status::Satisfiable{solution};
-        } else if conflict_count >= previous_restart_timestamp + 10000
-            || (conflict_count >= previous_restart_timestamp + 20
-                && plbd_watcher.lower_tail_probability() > 0.6)
-        {
-            restart_count += 1;
-            previous_restart_timestamp = conflict_count;
 
-            if pb_engine.decision_level() != 0 {
-                pb_engine.backjump(0);
-            }
+                pb_engine.update_assignment_probabilities();
 
-        } else {
-            pb_engine.decide();
-        }
-    }
-}
+                let analyze_result = analyzer.call(explain_key, &pb_engine);
 
-fn add_integer_linear_constraint(
-    pb_engine: &mut PBEngine,
-    integer_linear_constraint: &impl LinearConstraintTrait<Value = u64>,
-    is_learnt: bool,
-) {
-    if integer_linear_constraint.lower() == 0 {
-        return;
-    }
-    let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
-
-    if integer_linear_constraint
-        .iter_terms()
-        .all(|(_, coefficient)| coefficient == 1)
-    {
-        if integer_linear_constraint.len() == integer_linear_constraint.lower() as usize {
-            for (literal, _) in integer_linear_constraint.iter_terms() {
-                pb_engine.add_monadic_clause(MonadicClause { literal }, is_learnt);
-            }
-        } else {
-            pb_engine.add_count_constraint(
-                CountConstraintView::new(
-                    integer_linear_constraint
+                let AnalyzeResult::Backjumpable {
+                    backjump_level,
+                    learnt_constraint,
+                    conflicting_assignments,
+                } = analyze_result
+                else {
+                    return Status::Unsatisfiable;
+                };
+                eprintln!("BACKJUMP_LEVEL(AnalyzeResult)={}", backjump_level);
+                let plbd = calculate_plbd.calculate(
+                    learnt_constraint
                         .iter_terms()
-                        .map(|(literal, _)| literal),
-                    integer_linear_constraint.lower(),
-                ),
-                is_learnt,
-            );
-        }
-    } else {
-        let mut sum_of_unsaturating_coefficients = 0;
-        for (_, coefficient) in integer_linear_constraint.iter_terms() {
-            if coefficient < integer_linear_constraint.lower() {
-                sum_of_unsaturating_coefficients += coefficient;
-            }
-        }
-        if sum_of_unsaturating_coefficients == integer_linear_constraint.lower() {
-            // SAT 符号化して追加
-            let saturating_literals = integer_linear_constraint
-                .iter_terms()
-                .filter(|&(_, coefficient)| coefficient >= integer_linear_constraint.lower())
-                .map(|(literal, _)| literal);
-            let unsaturating_literals = integer_linear_constraint
-                .iter_terms()
-                .filter(|&(_, coefficient)| coefficient < integer_linear_constraint.lower())
-                .map(|(literal, _)| literal);
-            for unsaturating_literal in unsaturating_literals {
-                pb_engine.add_count_constraint(
-                    CountConstraintView::new(
-                        saturating_literals
-                            .clone()
-                            .chain([unsaturating_literal].into_iter()),
-                        1,
-                    ),
-                    is_learnt,
+                        .map(|(literal, _)| !literal)
+                        .filter(|&literal| pb_engine.is_true(literal)),
+                    &pb_engine,
                 );
+                plbd_watcher.add(plbd);
+                // plbd_watcher.add(pb_engine.decision_level());
+                // eprintln!("plbd={} long_term_mean={}, long_term_variance={}, short_term_mean={}, p={}", plbd, plbd_watcher.long_term_average.mean(), plbd_watcher.long_term_average.variance(), plbd_watcher.short_term_average.mean(), plbd_watcher.lower_tail_probability());
+
+                pb_engine.update_conflict_probabilities(conflicting_assignments);
+
+                let conflict_level = pb_engine.decision_level();
+
+                pb_engine.add_constraint(&learnt_constraint, true);
+                debug_assert!(pb_engine.state().is_backjump_required());
             }
-        } else {
-            pb_engine.add_integer_linear_constraint(integer_linear_constraint, is_learnt);
+            PBState::Noconflict => {
+                if pb_engine.number_of_assignments() == pb_engine.number_of_variables() {
+                    for constraint in pb_problem.constraints.iter() {
+                        let mut lhs = 0;
+                        for term in constraint.sum.iter() {
+                            if pb_engine.get_value(term.term.index - 1) == Boolean::TRUE {
+                                lhs += term.weight;
+                            }
+                        }
+                        assert!(lhs >= constraint.rhs, "{} {}", lhs, constraint.rhs);
+                        assert!(
+                            constraint.relational_operator == RelationalOperator::GreaterOrEqual
+                                || lhs <= constraint.rhs,
+                            "{} {}",
+                            lhs,
+                            constraint.rhs
+                        );
+                    }
+                    let solution = (0..pb_engine.number_of_variables())
+                        .map(|index| pb_engine.get_value(index))
+                        .collect();
+                    return Status::Satisfiable { solution };
+                } else if conflict_count >= previous_restart_timestamp + 10000
+                    || (conflict_count >= previous_restart_timestamp + 20
+                        && plbd_watcher.lower_tail_probability() > 0.6)
+                {
+                    restart_count += 1;
+                    previous_restart_timestamp = conflict_count;
+
+                    if pb_engine.decision_level() != 0 {
+                        pb_engine.backjump(0);
+                    }
+                } else {
+                    pb_engine.decide();
+                }
+            }
         }
     }
 }
+
+// fn add_integer_linear_constraint(
+//     pb_engine: &mut PBEngine<u64>,
+//     integer_linear_constraint: &impl LinearConstraintTrait<Value = u64>,
+//     is_learnt: bool,
+// ) {
+//     if integer_linear_constraint.lower() == 0 {
+//         return;
+//     }
+//     let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
+
+//     if integer_linear_constraint.iter_terms().all(|(_, coefficient)| coefficient == 1) {
+//         if integer_linear_constraint.len() == integer_linear_constraint.lower() as usize {
+//             for (literal, _) in integer_linear_constraint.iter_terms() {
+//                 pb_engine.add_monadic_clause(MonadicClause { literal }, is_learnt);
+//             }
+//         } else {
+//             pb_engine.add_count_constraint(
+//                 CountConstraintView::new(
+//                     integer_linear_constraint.iter_terms().map(|(literal, _)| literal),
+//                     integer_linear_constraint.lower(),
+//                 ),
+//                 is_learnt,
+//             );
+//         }
+//     } else {
+//         let mut sum_of_unsaturating_coefficients = 0;
+//         for (_, coefficient) in integer_linear_constraint.iter_terms() {
+//             if coefficient < integer_linear_constraint.lower() {
+//                 sum_of_unsaturating_coefficients += coefficient;
+//             }
+//         }
+//         if sum_of_unsaturating_coefficients == integer_linear_constraint.lower() {
+//             // SAT 符号化して追加
+//             let saturating_literals = integer_linear_constraint
+//                 .iter_terms()
+//                 .filter(|&(_, coefficient)| coefficient >= integer_linear_constraint.lower())
+//                 .map(|(literal, _)| literal);
+//             let unsaturating_literals = integer_linear_constraint
+//                 .iter_terms()
+//                 .filter(|&(_, coefficient)| coefficient < integer_linear_constraint.lower())
+//                 .map(|(literal, _)| literal);
+//             for unsaturating_literal in unsaturating_literals {
+//                 pb_engine.add_count_constraint(
+//                     CountConstraintView::new(
+//                         saturating_literals.clone().chain([unsaturating_literal].into_iter()),
+//                         1,
+//                     ),
+//                     is_learnt,
+//                 );
+//             }
+//         } else {
+//             pb_engine.add_integer_linear_constraint(integer_linear_constraint, is_learnt);
+//         }
+//     }
+// }

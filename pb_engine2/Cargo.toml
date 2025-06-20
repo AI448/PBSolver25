@@ -1,0 +1,10 @@
+[package]
+name = "pb_engine2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+either = {package="either", version="1.13.0"}
+ordered_float = {package="ordered-float", version="4.5.0"}
+utility = {path="../utility"}
+num = {package = "num", version = "0.4.3"}
