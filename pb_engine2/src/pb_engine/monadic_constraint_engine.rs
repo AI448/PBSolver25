@@ -18,13 +18,13 @@ pub struct MonadicConstraintExplainKey {
 }
 
 #[derive(Clone, Debug)]
-pub struct MonadicConstraintEngine<CompositeExplainKeyT: Copy> {
+pub struct MonadicConstraintEngine<CompositeExplainKeyT> {
     state: State<MonadicConstraintExplainKey>,
     decision_stack: DecisionStack<CompositeExplainKeyT>,
     constraint_queue: VecDeque<MonadicConstraint>,
 }
 
-impl<CompositeExplainKeyT: Copy> MonadicConstraintEngine<CompositeExplainKeyT> {
+impl<CompositeExplainKeyT> MonadicConstraintEngine<CompositeExplainKeyT> {
     pub fn new() -> Self {
         Self {
             state: State::Noconflict,
@@ -34,15 +34,16 @@ impl<CompositeExplainKeyT: Copy> MonadicConstraintEngine<CompositeExplainKeyT> {
     }
 }
 
-impl<CompositeExplainKeyT: Copy> Deref for MonadicConstraintEngine<CompositeExplainKeyT> {
+impl<CompositeExplainKeyT> Deref for MonadicConstraintEngine<CompositeExplainKeyT> {
     type Target = DecisionStack<CompositeExplainKeyT>;
     fn deref(&self) -> &Self::Target {
         return &self.decision_stack;
     }
 }
 
-impl<CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>> EngineTrait
-    for MonadicConstraintEngine<CompositeExplainKeyT>
+impl<CompositeExplainKeyT> EngineTrait for MonadicConstraintEngine<CompositeExplainKeyT>
+where
+    CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>,
 {
     type CompositeExplainKey = CompositeExplainKeyT;
 

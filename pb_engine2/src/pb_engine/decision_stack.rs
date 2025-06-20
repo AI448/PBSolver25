@@ -6,19 +6,13 @@ use super::etc::Reason;
 use crate::types::{Boolean, Literal};
 
 #[derive(Clone, Debug)]
-pub struct DecisionStack<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+pub struct DecisionStack<ExplainKeyT> {
     states: Vec<State>,
     assignment_stack: Vec<Assignment<ExplainKeyT>>,
     decision_stack: Vec<Decision>,
 }
 
-impl<ExplainKeyT> Default for DecisionStack<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+impl<ExplainKeyT> Default for DecisionStack<ExplainKeyT> {
     fn default() -> Self {
         Self {
             states: Vec::default(),
@@ -28,10 +22,7 @@ where
     }
 }
 
-impl<ExplainKeyT> DecisionStack<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+impl<ExplainKeyT> DecisionStack<ExplainKeyT> {
     const NULL_ASSIGNMENT_ORDER: usize = usize::MAX;
 
     pub fn number_of_variables(&self) -> usize {
@@ -164,7 +155,10 @@ where
         }
     }
 
-    pub fn get_reason(&self, index: usize) -> Option<Reason<ExplainKeyT>> {
+    pub fn get_reason(&self, index: usize) -> Option<Reason<ExplainKeyT>>
+    where
+        Reason<ExplainKeyT>: Copy,
+    {
         let order = self.states[index].order;
         if order == Self::NULL_ASSIGNMENT_ORDER {
             return None;
@@ -181,10 +175,7 @@ struct Decision {
 }
 
 #[derive(Clone, Debug)]
-struct Assignment<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+struct Assignment<ExplainKeyT> {
     index: usize,
     decision_level: usize,
     reason: Reason<ExplainKeyT>,

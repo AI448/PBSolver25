@@ -300,7 +300,7 @@ impl<ValueT> LinearConstraintToPBConstraint<ValueT>
 where
     ValueT: Integer + Unsigned + Copy + FromPrimitive + ToPrimitive,
 {
-    pub fn exec<ExplainKeyT: Copy>(
+    pub fn exec<ExplainKeyT>(
         &mut self,
         constraint: &impl LinearConstraintTrait<Value = ValueT>,
         decision_stack: &DecisionStack<ExplainKeyT>,

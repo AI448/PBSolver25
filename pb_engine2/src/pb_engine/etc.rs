@@ -41,10 +41,7 @@ pub enum State<ExplainKeyT> {
     Noconflict,
 }
 
-impl<ExplainKeyT> State<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+impl<ExplainKeyT> State<ExplainKeyT> {
     pub fn is_backjump_required(&self) -> bool {
         return matches!(self, Self::BackjumpRequired { .. });
     }
@@ -64,35 +61,39 @@ where
         return matches!(self, Self::Noconflict);
     }
 
-    pub fn is_prior_to<OtherExplainKeyT: Copy>(&self, other: State<OtherExplainKeyT>) -> bool {
-        fn to_tuple<T: Copy>(state: State<T>) -> (usize, usize) {
+    pub fn is_prior_to<OtherExplainKeyT>(&self, other: &State<OtherExplainKeyT>) -> bool {
+        fn to_tuple<T>(state: &State<T>) -> (usize, usize) {
             return match state {
-                State::BackjumpRequired { backjump_level } => (0, backjump_level),
+                State::BackjumpRequired { backjump_level } => (0, *backjump_level),
                 State::Conflict { .. } => (1, 0),
                 State::Noconflict => (2, 0),
             };
         }
 
-        return to_tuple(*self) < to_tuple(other);
+        return to_tuple(self) < to_tuple(&other);
     }
 
     pub fn merge(&mut self, other: State<ExplainKeyT>) {
-        if other.is_prior_to(*self) {
+        if other.is_prior_to(self) {
             *self = other;
         }
     }
 
-    pub fn composite<OtherExplainKeyT: Copy>(
+    pub fn composite<OtherExplainKeyT>(
         &self,
         other: State<OtherExplainKeyT>,
-    ) -> State<Either<ExplainKeyT, OtherExplainKeyT>> {
-        if self.is_prior_to(other) {
-            return match *self {
-                State::BackjumpRequired { backjump_level } => {
-                    State::BackjumpRequired { backjump_level }
-                }
+    ) -> State<Either<ExplainKeyT, OtherExplainKeyT>>
+    where
+        ExplainKeyT: Copy,
+        OtherExplainKeyT: Copy,
+    {
+        if self.is_prior_to(&other) {
+            return match self {
+                State::BackjumpRequired { backjump_level } => State::BackjumpRequired {
+                    backjump_level: *backjump_level,
+                },
                 State::Conflict { explain_key } => State::Conflict {
-                    explain_key: Either::Left(explain_key),
+                    explain_key: Either::Left(*explain_key),
                 },
                 State::Noconflict => State::Noconflict,
             };
@@ -112,10 +113,7 @@ where
 
 /// 割り当て理由
 #[derive(Clone, Copy, Debug)]
-pub enum Reason<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+pub enum Reason<ExplainKeyT> {
     /// 決定
     Decision,
     /// 伝播
@@ -126,10 +124,7 @@ where
     },
 }
 
-impl<ExplainKeyT> Reason<ExplainKeyT>
-where
-    ExplainKeyT: Copy,
-{
+impl<ExplainKeyT> Reason<ExplainKeyT> {
     #[inline(always)]
     pub fn is_decision(&self) -> bool {
         return matches!(self, Self::Decision);
