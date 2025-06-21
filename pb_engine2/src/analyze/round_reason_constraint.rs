@@ -3,7 +3,9 @@ use ordered_float::OrderedFloat;
 use crate::{
     Literal,
     analyze::utility::lhs_sup_of_linear_constraint_at,
-    pb_engine::{LinearConstraintTrait, PBEngine, RandomAccessibleLinearConstraint},
+    pb_engine::{
+        LinearConstraint, LinearConstraintTrait, PBEngine, RandomAccessibleLinearConstraint,
+    },
 };
 
 use super::{
@@ -18,7 +20,7 @@ pub struct RoundReasonConstraint {
     identify_causals: IdentifyPropagationCausals,
     // weaken: Weaken,
     round: Round2<u64>,
-    // linear_constraint: LinearConstraint<u64>,
+    linear_constraint: LinearConstraint<u64>,
 }
 
 impl RoundReasonConstraint {
@@ -28,6 +30,7 @@ impl RoundReasonConstraint {
             identify_causals: IdentifyPropagationCausals::new(),
             // weaken: Weaken::new(),
             round: Round2::new(),
+            linear_constraint: LinearConstraint::default(),
         }
     }
 
@@ -36,7 +39,7 @@ impl RoundReasonConstraint {
         reason_constraint: &impl LinearConstraintTrait<Value = u64>,
         conflict_constraint: &RandomAccessibleLinearConstraint<u128>,
         propagated_assignment: Literal,
-        pb_engine: &PBEngine<u64>,
+        pb_engine: &PBEngine,
     ) -> impl LinearConstraintTrait<Value = u64> + '_ {
         assert!(
             reason_constraint
@@ -77,9 +80,10 @@ impl RoundReasonConstraint {
             .1;
         let multipler = conflict_constraint.get(!propagated_assignment).unwrap();
 
+        let hoge = reason_constraint.convert();
         // round
         let rounded_reason_constraint = self.round.calculate(
-            reason_constraint.convert(),
+            &hoge,
             divisor,
             |literal| causal_assignments.contains_key(!literal),
             move |literal| {
@@ -108,9 +112,9 @@ impl RoundReasonConstraint {
             debug_assert!(sup_at_propaged < rounded_reason_constraint.lower() + 1);
         }
 
-        return rounded_reason_constraint;
+        // return rounded_reason_constraint;
 
-        // self.linear_constraint.replace(&rounded_reason_constraint);
-        // return &self.linear_constraint;
+        self.linear_constraint.replace_by_linear_constraint(&rounded_reason_constraint);
+        return self.linear_constraint.as_view();
     }
 }

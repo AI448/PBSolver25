@@ -24,7 +24,7 @@ impl FindConflictLiteral {
     pub fn find(
         &mut self,
         conflict_constraint: impl LinearConstraintTrait<Value = u64>,
-        engine: &PBEngine<u64>,
+        engine: &PBEngine,
     ) -> Literal {
         self.falsified_literals.clear();
         let mut sup = 0;

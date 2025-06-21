@@ -2,18 +2,65 @@ use std::{collections::VecDeque, ops::Deref};
 
 use either::Either;
 
-use crate::{Literal, collections::LiteralArray};
-
-use super::{
-    engine_trait::{EngineAddConstraintTrait, EngineTrait},
-    etc::{Reason, State},
+use crate::{
+    Literal,
+    collections::LiteralArray,
+    pb_engine::{
+        DecisionStack, MonadicConstraint, MonadicConstraintEngine, MonadicConstraintExplainKey,
+        decision_stack, monadic_constraint_engine::OneSatExplainKey,
+    },
 };
+
+use super::etc::{Reason, State};
 
 pub trait CountConstraintTrait {
     fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone;
     fn lower(&self) -> usize;
     fn len(&self) -> usize {
         self.iter_terms().count()
+    }
+
+    fn drop_fixed_variables<ExplainKeyT>(
+        &self,
+        decision_stack: &DecisionStack<ExplainKeyT>,
+    ) -> impl CountConstraintTrait {
+        let mut lower = self.lower();
+        for literal in self.iter_terms() {
+            if lower == 0 {
+                break;
+            }
+            if decision_stack.get_decision_level(literal.index()) == 0
+                && decision_stack.is_true(literal)
+            {
+                lower -= 1;
+            }
+        }
+        return CountConstraintView::new(
+            self.iter_terms()
+                .filter(|&literal| decision_stack.get_decision_level(literal.index()) != 0),
+            lower,
+        );
+    }
+}
+
+impl<LeftCountConstraintT, RightConstraintT> CountConstraintTrait
+    for Either<LeftCountConstraintT, RightConstraintT>
+where
+    LeftCountConstraintT: CountConstraintTrait,
+    RightConstraintT: CountConstraintTrait,
+{
+    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone {
+        return match self {
+            Either::Left(left) => Either::Left(left.iter_terms()),
+            Either::Right(right) => Either::Right(right.iter_terms()),
+        };
+    }
+
+    fn lower(&self) -> usize {
+        return match self {
+            Either::Left(left) => left.lower(),
+            Either::Right(right) => right.lower(),
+        };
     }
 }
 
@@ -75,6 +122,24 @@ pub struct CountConstraintExplainKey {
     row_id: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CountConstraintEngineExplainKey {
+    OneSatEngine(OneSatExplainKey),
+    CountConstraint(CountConstraintExplainKey),
+}
+
+impl From<OneSatExplainKey> for CountConstraintEngineExplainKey {
+    fn from(explain_key: OneSatExplainKey) -> Self {
+        Self::OneSatEngine(explain_key)
+    }
+}
+
+impl From<CountConstraintExplainKey> for CountConstraintEngineExplainKey {
+    fn from(explain_key: CountConstraintExplainKey) -> Self {
+        Self::CountConstraint(explain_key)
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Row {
     literals: Vec<Literal>,
@@ -108,20 +173,20 @@ struct Column {
     watchers: Vec<Watcher>,
 }
 
-pub struct CountConstraintEngine<InnerEngineT> {
+pub struct CountConstraintEngine<CompositeExplainKey> {
     state: State<CountConstraintExplainKey>,
-    inner_engine: InnerEngineT,
+    inner_engine: MonadicConstraintEngine<CompositeExplainKey>,
     rows: Vec<Row>,
     columns: LiteralArray<Column>,
     number_of_confirmed_assignments: usize,
     constraint_queue: VecDeque<(CountConstraint, bool)>,
 }
 
-impl<InnerEngineT> CountConstraintEngine<InnerEngineT> {
-    pub fn new(inner_engine: InnerEngineT) -> Self {
+impl<CompositeExplainKeyT> CountConstraintEngine<CompositeExplainKeyT> {
+    pub fn new() -> Self {
         Self {
             state: State::Noconflict,
-            inner_engine,
+            inner_engine: MonadicConstraintEngine::new(),
             rows: Vec::default(),
             columns: LiteralArray::default(),
             number_of_confirmed_assignments: 0,
@@ -130,63 +195,54 @@ impl<InnerEngineT> CountConstraintEngine<InnerEngineT> {
     }
 }
 
-impl<InnerEngineT> Deref for CountConstraintEngine<InnerEngineT>
-where
-    InnerEngineT: Deref,
-{
-    type Target = InnerEngineT::Target;
+impl<CompositeExplainKeyT> Deref for CountConstraintEngine<CompositeExplainKeyT> {
+    type Target = <MonadicConstraintEngine<CompositeExplainKeyT> as Deref>::Target;
     fn deref(&self) -> &Self::Target {
         self.inner_engine.deref()
     }
 }
 
-impl<InnerEngineT> EngineTrait for CountConstraintEngine<InnerEngineT>
+impl<CompositeExplainKeyT> CountConstraintEngine<CompositeExplainKeyT>
 where
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey: From<CountConstraintExplainKey>,
+    CompositeExplainKeyT: From<CountConstraintExplainKey> + From<MonadicConstraintExplainKey>,
 {
-    type CompositeExplainKey = InnerEngineT::CompositeExplainKey;
-    type ExplainKey = Either<CountConstraintExplainKey, InnerEngineT::ExplainKey>;
-    type ExplanationConstraint<'a>
-        = Either<impl CountConstraintTrait + 'a, InnerEngineT::ExplanationConstraint<'a>>
-    where
-        Self: 'a;
-
-    fn state(&self) -> State<Self::ExplainKey> {
+    pub fn state(&self) -> State<CountConstraintEngineExplainKey> {
         return self.state.composite(self.inner_engine.state());
     }
 
-    fn explain(&self, explain_key: Self::ExplainKey) -> Self::ExplanationConstraint<'_> {
-        match explain_key {
-            Either::Left(explain_key) => {
-                return Either::Left(&self.rows[explain_key.row_id]);
+    pub fn explain(
+        &self,
+        explain_key: CountConstraintEngineExplainKey,
+    ) -> impl CountConstraintTrait {
+        return match explain_key {
+            CountConstraintEngineExplainKey::OneSatEngine(explain_key) => {
+                Either::Left(CountConstraintView::new(
+                    [self.inner_engine.explain(explain_key).literal].into_iter(),
+                    1,
+                ))
             }
-            Either::Right(explain_key) => {
-                return Either::Right(self.inner_engine.explain(explain_key));
+            CountConstraintEngineExplainKey::CountConstraint(explain_key) => {
+                Either::Right(&self.rows[explain_key.row_id])
             }
-        }
+        };
     }
 
-    fn add_variable(&mut self) {
+    pub fn add_variable(&mut self) {
         self.inner_engine.add_variable();
         self.columns.push([Column::default(), Column::default()]);
     }
 
-    fn assign(&mut self, literal: Literal, reason: Reason<Self::CompositeExplainKey>) {
+    pub fn assign(&mut self, literal: Literal, reason: Reason<CompositeExplainKeyT>) {
         assert!(self.state.is_noconflict());
         assert!(self.inner_engine.state().is_noconflict());
         debug_assert!(
             self.number_of_confirmed_assignments == self.inner_engine.number_of_assignments()
         );
-        // if let Reason::Propagation { explain_key } = reason {
-        //     assert!(explain_key.try_into().is_err());
-        // }
-
         self.inner_engine.assign(literal, reason);
         self.propagate();
     }
 
-    fn backjump(&mut self, backjump_level: usize) {
+    pub fn backjump(&mut self, backjump_level: usize) {
         let backjump_order = self.inner_engine.order_range(backjump_level).end;
         debug_assert!(backjump_order <= self.number_of_confirmed_assignments);
         self.number_of_confirmed_assignments = backjump_order;
@@ -199,88 +255,71 @@ where
         }
         self.propagate();
     }
-}
 
-impl<CountConstraintT, InnerEngineT, InnerConstraintT>
-    EngineAddConstraintTrait<Either<CountConstraintT, InnerConstraintT>>
-    for CountConstraintEngine<InnerEngineT>
-where
-    CountConstraintT: CountConstraintTrait,
-    InnerEngineT: EngineTrait + EngineAddConstraintTrait<InnerConstraintT>,
-    InnerEngineT::CompositeExplainKey: From<CountConstraintExplainKey>,
-{
-    fn add_constraint(
-        &mut self,
-        constraint: Either<CountConstraintT, InnerConstraintT>,
-        is_learnt: bool,
-    ) {
-        match constraint {
-            // self 用の制約である場合
-            Either::Left(constraint) => {
-                // CountConstraint を構築
-                let mut constraint: CountConstraint = (&constraint).into();
-
-                // 伝播が発生する最小の決定レベルを特定
-                let backjump_level = if constraint.len() > constraint.lower {
-                    constraint.literals.sort_unstable_by_key(|literal| {
-                        self.inner_engine.get_assignment_order(literal.index())
-                    });
-                    let nth_falsified_literal = constraint
-                        .literals
-                        .iter()
-                        .cloned()
-                        .filter(|&literal| self.inner_engine.is_false(literal))
-                        .nth(constraint.literals.len() - constraint.lower - 1);
-                    nth_falsified_literal
-                        .map(|literal| self.inner_engine.get_decision_level(literal.index()))
-                } else {
-                    Some(0)
-                };
-                if is_learnt {
-                    let sup_at_previous_decision_level = constraint
-                        .literals
-                        .iter()
-                        .cloned()
-                        .filter(|&literal| {
-                            !(self.inner_engine.is_false(literal)
-                                && self.get_decision_level(literal.index())
-                                    < self.inner_engine.decision_level())
-                        })
-                        .count();
-                    eprintln!(
-                        "{:?} {}, {}, {}",
-                        backjump_level,
-                        self.inner_engine.decision_level(),
-                        sup_at_previous_decision_level,
-                        constraint.lower
-                    );
-                }
-                // 現在の決定レベルよりも前に伝播が発生するなら state を BackjumpRequired に
-                if let Some(backjump_level) = backjump_level
-                    && backjump_level < self.inner_engine.decision_level()
-                {
-                    self.state.merge(State::BackjumpRequired { backjump_level });
-                    debug_assert!(self.state.is_backjump_required());
-                }
-
-                // 制約条件をキューに追加
-                self.constraint_queue.push_back((constraint, is_learnt));
+    pub fn add_constraint(&mut self, constraint: &impl CountConstraintTrait, is_learnt: bool) {
+        let mut constraint: CountConstraint =
+            (&constraint.drop_fixed_variables(&self.inner_engine)).into();
+        if constraint.lower() == 0 {
+            // 無効な制約条件であれば何もしない
+            return;
+        } else if constraint.len() == 1 {
+            // 項が 1 つであれば inner_engine に追加する
+            self.inner_engine.add_constraint(
+                MonadicConstraint {
+                    literal: constraint.iter_terms().next().unwrap(),
+                },
+                is_learnt,
+            );
+        } else {
+            // 伝播が発生する最小の決定レベルを特定
+            let backjump_level = if constraint.len() > constraint.lower {
+                constraint.literals.sort_unstable_by_key(|literal| {
+                    self.inner_engine.get_assignment_order(literal.index())
+                });
+                let nth_falsified_literal = constraint
+                    .literals
+                    .iter()
+                    .cloned()
+                    .filter(|&literal| self.inner_engine.is_false(literal))
+                    .nth(constraint.literals.len() - constraint.lower - 1);
+                nth_falsified_literal
+                    .map(|literal| self.inner_engine.get_decision_level(literal.index()))
+            } else {
+                Some(0)
+            };
+            if is_learnt {
+                let sup_at_previous_decision_level = constraint
+                    .literals
+                    .iter()
+                    .cloned()
+                    .filter(|&literal| {
+                        !(self.inner_engine.is_false(literal)
+                            && self.get_decision_level(literal.index())
+                                < self.inner_engine.decision_level())
+                    })
+                    .count();
+                eprintln!(
+                    "{:?} {}, {}, {}",
+                    backjump_level,
+                    self.inner_engine.decision_level(),
+                    sup_at_previous_decision_level,
+                    constraint.lower
+                );
             }
-            // inner_engine 用の制約である場合
-            Either::Right(constraint) => {
-                self.inner_engine.add_constraint(constraint, is_learnt);
+            // 現在の決定レベルよりも前に伝播が発生するなら state を BackjumpRequired に
+            if let Some(backjump_level) = backjump_level
+                && backjump_level < self.inner_engine.decision_level()
+            {
+                self.state.merge(State::BackjumpRequired { backjump_level });
+                debug_assert!(self.state.is_backjump_required());
             }
+
+            // 制約条件をキューに追加
+            self.constraint_queue.push_back((constraint, is_learnt));
         }
-
         self.propagate();
     }
-}
 
-impl<InnerEngineT> CountConstraintEngine<InnerEngineT>
-where
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey: From<CountConstraintExplainKey>,
-{
     fn propagate(&mut self) {
         while self.state.is_noconflict() && self.inner_engine.state().is_noconflict() {
             if self.number_of_confirmed_assignments < self.inner_engine.number_of_assignments() {

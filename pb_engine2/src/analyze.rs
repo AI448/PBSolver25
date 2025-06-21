@@ -21,7 +21,10 @@ use utility::{drop_fixed_variable, lhs_sup_of_linear_constraint_at};
 use crate::{
     Boolean, Literal,
     collections::LiteralSet,
-    pb_engine::{LinearConstraint, LinearConstraintTrait, PBEngine, PBExplainKey, Reason},
+    pb_engine::{
+        LinearConstraint, LinearConstraintTrait, LinearConstraintView, PBEngine, PBExplainKey,
+        Reason,
+    },
 };
 
 // TODO: learnt_constraint は LinearConstraint でいい
@@ -64,7 +67,7 @@ impl Analyze {
         &mut self,
         // conflict_variable: usize,
         conflict_explain_key: PBExplainKey,
-        engine: &PBEngine<u64>,
+        engine: &PBEngine,
     ) -> AnalyzeResult<
         impl LinearConstraintTrait<Value = u64> + '_,
         impl Iterator<Item = Literal> + '_,
@@ -75,7 +78,7 @@ impl Analyze {
         // TODO: 意味があるのか確認
 
         // conflict_constraint を初期化
-        self.conflict_constraint.replace_by_linear_constraint(drop_fixed_variable(
+        self.conflict_constraint.replace_by_linear_constraint(&drop_fixed_variable(
             &engine.explain(conflict_explain_key),
             engine,
         ));
@@ -118,7 +121,10 @@ impl Analyze {
                 }
                 return AnalyzeResult::Backjumpable {
                     backjump_level: backjump_level,
-                    learnt_constraint: &self.conflict_constraint,
+                    learnt_constraint: LinearConstraintView::new(
+                        self.conflict_constraint.iter_terms(),
+                        self.conflict_constraint.lower(),
+                    ),
                     conflicting_assignments: self.conflicting_assignments.iter(),
                 };
             }
@@ -158,7 +164,7 @@ impl Analyze {
             );
 
             self.conflict_constraint.replace_by_linear_constraint(
-                self.flatten.call(&resolved_constraint, conflict_order, engine).convert(),
+                &self.flatten.call(&resolved_constraint, conflict_order, engine).convert(),
             );
 
             self.conflicting_assignments.insert(!conflict_literal);

@@ -23,8 +23,8 @@ impl CalculatePropagationLevel {
 
     pub fn call(
         &mut self,
-        linear_constraint: impl LinearConstraintTrait<Value = u64>,
-        engine: &PBEngine<u64>,
+        linear_constraint: &impl LinearConstraintTrait<Value = u64>,
+        engine: &PBEngine,
         include_nonfalsified_literals: bool,
     ) -> Option<usize> {
         // 各決定レベルでの上界の減少量と，割り当てられた変数の係数の最大値を算出

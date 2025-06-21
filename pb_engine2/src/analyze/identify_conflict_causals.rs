@@ -29,7 +29,7 @@ where
         conflict_constraint: &impl LinearConstraintTrait<Value = ValueT>,
         conflict_order: usize,
         get_priority: impl Fn(Literal, ValueT) -> PriorityT,
-        pb_engine: &PBEngine<u64>,
+        pb_engine: &PBEngine,
     ) -> (&'_ LiteralSet, ValueT) {
         self.causal_terms.clear();
         let mut sup = ValueT::zero();

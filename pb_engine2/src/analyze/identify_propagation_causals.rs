@@ -29,7 +29,7 @@ impl IdentifyPropagationCausals {
         reason_constraint: &impl LinearConstraintTrait<Value = u64>,
         propagated_literal: Literal,
         get_priority: impl Fn(Literal) -> PriorityT,
-        pb_engine: &PBEngine<u64>,
+        pb_engine: &PBEngine,
     ) -> (&'_ LiteralSet, u64) {
         let resolving_order = pb_engine.get_assignment_order(propagated_literal.index());
 

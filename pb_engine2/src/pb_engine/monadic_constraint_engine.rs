@@ -2,7 +2,6 @@ use std::{collections::VecDeque, ops::Deref};
 
 use super::{
     decision_stack::DecisionStack,
-    engine_trait::{EngineAddConstraintTrait, EngineTrait},
     etc::{Reason, State},
 };
 use crate::{Boolean, Literal};
@@ -41,37 +40,30 @@ impl<CompositeExplainKeyT> Deref for MonadicConstraintEngine<CompositeExplainKey
     }
 }
 
-impl<CompositeExplainKeyT> EngineTrait for MonadicConstraintEngine<CompositeExplainKeyT>
+pub type OneSatExplainKey = MonadicConstraintExplainKey;
+
+impl<CompositeExplainKeyT> MonadicConstraintEngine<CompositeExplainKeyT>
 where
-    CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>,
+    CompositeExplainKeyT: From<MonadicConstraintExplainKey>,
 {
-    type CompositeExplainKey = CompositeExplainKeyT;
-
-    type ExplainKey = MonadicConstraintExplainKey;
-
-    type ExplanationConstraint<'a>
-        = MonadicConstraint
-    where
-        Self: 'a;
-
-    fn state(&self) -> State<Self::ExplainKey> {
+    pub fn state(&self) -> State<MonadicConstraintExplainKey> {
         return self.state;
     }
 
-    fn explain(&self, explain_key: MonadicConstraintExplainKey) -> MonadicConstraint {
+    pub fn explain(&self, explain_key: MonadicConstraintExplainKey) -> MonadicConstraint {
         return explain_key.constraint;
     }
 
-    fn add_variable(&mut self) {
+    pub fn add_variable(&mut self) {
         self.decision_stack.add_variable(Boolean::FALSE);
     }
 
-    fn assign(&mut self, literal: Literal, reason: Reason<Self::CompositeExplainKey>) {
+    pub fn assign(&mut self, literal: Literal, reason: Reason<CompositeExplainKeyT>) {
         assert!(self.state.is_noconflict());
         self.decision_stack.assign(literal, reason);
     }
 
-    fn backjump(&mut self, backjump_level: usize) {
+    pub fn backjump(&mut self, backjump_level: usize) {
         self.decision_stack.backjump(backjump_level);
         if self.state.is_backjump_required() && backjump_level == 0 {
             self.state = State::Noconflict;
@@ -81,12 +73,8 @@ where
             }
         }
     }
-}
 
-impl<CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>>
-    EngineAddConstraintTrait<MonadicConstraint> for MonadicConstraintEngine<CompositeExplainKeyT>
-{
-    fn add_constraint(&mut self, constraint: MonadicConstraint, _is_learnt: bool) {
+    pub fn add_constraint(&mut self, constraint: MonadicConstraint, _is_learnt: bool) {
         if self.decision_stack.decision_level() == 0 {
             if self.state.is_noconflict() {
                 self.add_row(constraint);
@@ -98,12 +86,7 @@ impl<CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>>
             self.state = State::BackjumpRequired { backjump_level: 0 };
         }
     }
-}
 
-impl<CompositeExplainKeyT> MonadicConstraintEngine<CompositeExplainKeyT>
-where
-    CompositeExplainKeyT: Copy + From<MonadicConstraintExplainKey>,
-{
     fn add_row(&mut self, constraint: MonadicConstraint) {
         debug_assert!(self.state.is_noconflict());
         debug_assert!(self.decision_stack.decision_level() == 0);

@@ -5,11 +5,13 @@ use std::ops::AddAssign;
 use std::{cmp::min, fmt::Debug};
 
 use crate::Literal;
-use crate::pb_engine::{LinearConstraintTrait, LinearConstraintView, PBEngine};
+use crate::pb_engine::{
+    CompositeLinearConstraint, LinearConstraintTrait, LinearConstraintView, PBEngine,
+};
 
 pub fn drop_fixed_variable(
     constraint: &impl LinearConstraintTrait<Value = u64>,
-    engine: &PBEngine<u64>,
+    engine: &PBEngine,
 ) -> impl LinearConstraintTrait<Value = u64> {
     let mut lower = constraint.lower();
     for (literal, coefficient) in constraint.iter_terms() {
@@ -60,7 +62,7 @@ pub fn drop_fixed_variable(
 pub fn lhs_sup_of_linear_constraint_at<ValueT>(
     constraint: &impl LinearConstraintTrait<Value = ValueT>,
     order: usize,
-    engine: &PBEngine<u64>,
+    engine: &PBEngine,
 ) -> ValueT
 where
     ValueT: Num + AddAssign + Copy,
@@ -90,14 +92,14 @@ where
     }
 
     if sum_of_unsaturating_coefficients < lower {
-        return Either::Left(LinearConstraintView::new(
+        return CompositeLinearConstraint::Left(LinearConstraintView::new(
             constraint.iter_terms().filter(move |&(_, coefficient)| coefficient >= lower),
             ValueT::one(),
         ));
     } else {
         let gcd =
             calculate_gcd(constraint.iter_terms().map(|(_, coefficient)| min(coefficient, lower)));
-        return Either::Right(LinearConstraintView::new(
+        return CompositeLinearConstraint::Right(LinearConstraintView::new(
             constraint.iter_terms().filter_map(move |(literal, coefficient)| {
                 if coefficient != ValueT::zero() {
                     debug_assert!(min(coefficient, lower) % gcd == ValueT::zero());

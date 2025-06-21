@@ -26,7 +26,7 @@ impl Round {
         constraint: &impl LinearConstraintTrait<Value = f64>,
         is_causal: impl Fn(Literal) -> bool,
         get_anticoefficient: impl Fn(Literal) -> f64,
-        engine: &PBEngine<u64>,
+        engine: &PBEngine,
     ) {
         let work = &mut self.work;
 
@@ -231,14 +231,14 @@ where
         }
     }
 
-    pub fn calculate<'a>(
-        &'a mut self,
-        constraint: impl LinearConstraintTrait<Value = ValueT>,
+    pub fn calculate(
+        &mut self,
+        constraint: &impl LinearConstraintTrait<Value = ValueT>,
         divisor: ValueT,
         is_causal: impl Fn(Literal) -> bool,
         get_anticoefficient: impl Fn(Literal) -> f64,
-        engine: &PBEngine<u64>,
-    ) -> impl LinearConstraintTrait<Value = ValueT> + 'a {
+        engine: &PBEngine,
+    ) -> impl LinearConstraintTrait<Value = ValueT> + '_ {
         let work = &mut self.work;
 
         work.terms.clear();

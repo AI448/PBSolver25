@@ -1,10 +1,15 @@
-use super::{
-    engine_trait::{EngineAddConstraintTrait, EngineTrait},
-    etc::{Reason, State},
+use super::etc::{Reason, State};
+use crate::{
+    Boolean, Literal,
+    collections::LiteralArray,
+    pb_engine::{
+        CountConstraintEngine, CountConstraintExplainKey, CountConstraintTrait,
+        CountConstraintView, DecisionStack, MonadicConstraintExplainKey,
+        count_constraint_engine::CountConstraintEngineExplainKey,
+    },
 };
-use crate::{Boolean, Literal, collections::LiteralArray};
 use either::Either;
-use num::{FromPrimitive, Integer, NumCast, ToPrimitive, Unsigned};
+use num::{FromPrimitive, Integer, Num, NumCast, ToPrimitive, Unsigned, Zero};
 use std::{
     cmp::{Reverse, max},
     collections::VecDeque,
@@ -14,7 +19,7 @@ use std::{
 use utility::{Map, Set};
 
 pub trait LinearConstraintTrait {
-    type Value: Integer + Unsigned + Copy + FromPrimitive;
+    type Value: Integer + Unsigned + Copy + FromPrimitive + Zero;
     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone;
     fn lower(&self) -> Self::Value;
 
@@ -23,6 +28,10 @@ pub trait LinearConstraintTrait {
             self.iter_terms().map(move |(literal, coefficient)| (literal, coefficient * multipler)),
             self.lower() * multipler,
         );
+    }
+
+    fn as_view(&self) -> impl LinearConstraintTrait<Value = Self::Value> {
+        return LinearConstraintView::new(self.iter_terms(), self.lower());
     }
 
     fn convert<ValueT>(&self) -> impl LinearConstraintTrait<Value = ValueT>
@@ -36,24 +45,67 @@ pub trait LinearConstraintTrait {
             ValueT::from(self.lower()).unwrap(),
         );
     }
+
+    fn drop_fixed_variables<ExplainKeyT>(
+        &self,
+        decision_stack: &DecisionStack<ExplainKeyT>,
+    ) -> impl LinearConstraintTrait<Value = Self::Value> {
+        let mut lower = self.lower();
+        for (literal, coefficient) in self.iter_terms() {
+            if decision_stack.is_true(literal)
+                && decision_stack.get_decision_level(literal.index()) == 0
+            {
+                if lower < coefficient {
+                    lower = Self::Value::zero();
+                    break;
+                } else {
+                    lower = lower - coefficient;
+                }
+            }
+        }
+        return LinearConstraintView::new(
+            self.iter_terms().filter(|&(literal, coefficient)| {
+                !coefficient.is_zero() && decision_stack.get_decision_level(literal.index()) != 0
+            }),
+            lower,
+        );
+    }
 }
 
-impl<LinearConstraintT> LinearConstraintTrait for &LinearConstraintT
-where
-    LinearConstraintT: LinearConstraintTrait,
-{
-    type Value = LinearConstraintT::Value;
-    fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
-        (*self).iter_terms()
-    }
+// impl<LinearConstraintT> LinearConstraintTrait for &LinearConstraintT
+// where
+//     LinearConstraintT: LinearConstraintTrait,
+// {
+//     type Value = LinearConstraintT::Value;
+//     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
+//         (*self).iter_terms()
+//     }
 
-    fn lower(&self) -> Self::Value {
-        (*self).lower()
+//     fn lower(&self) -> Self::Value {
+//         (*self).lower()
+//     }
+// }
+
+impl<CountConstraintT> LinearConstraintTrait for CountConstraintT
+where
+    CountConstraintT: CountConstraintTrait,
+{
+    type Value = u64;
+    fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
+        self.iter_terms().map(|literal| (literal, 1))
     }
+    fn lower(&self) -> Self::Value {
+        self.lower() as Self::Value
+    }
+}
+
+pub enum CompositeLinearConstraint<LeftLinearConstraintT, RightLinearConstraintT> {
+    Left(LeftLinearConstraintT),
+    Right(RightLinearConstraintT),
 }
 
 impl<LeftLinearConstraintT, RightLinearConstraintT, ValueT> LinearConstraintTrait
-    for Either<LeftLinearConstraintT, RightLinearConstraintT>
+    for CompositeLinearConstraint<LeftLinearConstraintT, RightLinearConstraintT>
 where
     ValueT: Integer + Unsigned + Copy + FromPrimitive,
     LeftLinearConstraintT: LinearConstraintTrait<Value = ValueT>,
@@ -62,17 +114,40 @@ where
     type Value = ValueT;
     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
         return match self {
-            Either::Left(left) => Either::Left(left.iter_terms()),
-            Either::Right(right) => Either::Right(right.iter_terms()),
+            Self::Left(left) => Either::Left(left.iter_terms()),
+            Self::Right(right) => Either::Right(right.iter_terms()),
         };
     }
+
     fn lower(&self) -> Self::Value {
         return match self {
-            Either::Left(left) => left.lower(),
-            Either::Right(right) => right.lower(),
+            Self::Left(left) => left.lower(),
+            Self::Right(right) => right.lower(),
         };
     }
 }
+
+// impl<LeftLinearConstraintT, RightLinearConstraintT, ValueT> LinearConstraintTrait
+//     for Either<LeftLinearConstraintT, RightLinearConstraintT>
+// where
+//     ValueT: Integer + Unsigned + Copy + FromPrimitive,
+//     LeftLinearConstraintT: LinearConstraintTrait<Value = ValueT>,
+//     RightLinearConstraintT: LinearConstraintTrait<Value = ValueT>,
+// {
+//     type Value = ValueT;
+//     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
+//         return match self {
+//             Either::Left(left) => Either::Left(left.iter_terms()),
+//             Either::Right(right) => Either::Right(right.iter_terms()),
+//         };
+//     }
+//     fn lower(&self) -> Self::Value {
+//         return match self {
+//             Either::Left(left) => left.lower(),
+//             Either::Right(right) => right.lower(),
+//         };
+//     }
+// }
 
 #[derive(Clone, Debug)]
 pub struct LinearConstraint<ValueT> {
@@ -101,7 +176,7 @@ impl<ValueT> LinearConstraint<ValueT> {
 
     pub fn replace_by_linear_constraint(
         &mut self,
-        linear_constraint: impl LinearConstraintTrait<Value = ValueT>,
+        linear_constraint: &impl LinearConstraintTrait<Value = ValueT>,
     ) {
         self.replace(linear_constraint.iter_terms(), linear_constraint.lower());
     }
@@ -231,7 +306,7 @@ where
         &mut self.lower
     }
 
-    pub fn add_assign(&mut self, reason_constraint: impl LinearConstraintTrait<Value = ValueT>) {
+    pub fn add_assign(&mut self, reason_constraint: &impl LinearConstraintTrait<Value = ValueT>) {
         self.lower = self.lower + reason_constraint.lower();
         for (literal, coefficient) in reason_constraint.iter_terms() {
             if let Some(term) = self.terms.get_mut(literal.index()) {
@@ -257,25 +332,107 @@ where
     }
 }
 
+pub struct StrengthenLinearConstraint<ValueT> {
+    terms: Vec<(Literal, ValueT)>,
+}
+
+impl<ValueT> Default for StrengthenLinearConstraint<ValueT> {
+    fn default() -> Self {
+        Self {
+            terms: Vec::default(),
+        }
+    }
+}
+
+impl<ValueT> Clone for StrengthenLinearConstraint<ValueT> {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl<ValueT> StrengthenLinearConstraint<ValueT>
+where
+    ValueT: Integer + Unsigned + Copy + FromPrimitive,
+{
+    fn exec<ExplainKeyT>(
+        &mut self,
+        constraint: &impl LinearConstraintTrait<Value = ValueT>,
+        decision_stack: &DecisionStack<ExplainKeyT>,
+    ) -> impl LinearConstraintTrait<Value = ValueT> + '_ {
+        // 決定レベル 0 で割り当てられている変数を除いて制約を複製
+        self.terms.clear();
+        let mut lower = constraint.lower();
+        for (literal, coefficient) in constraint.iter_terms() {
+            if decision_stack.get_decision_level(literal.index()) == 0 {
+                if decision_stack.is_true(literal) {
+                    if lower <= coefficient {
+                        // 右辺値が 0 になる場合には自明に満たされる制約条件なので両辺を 0 にして中断
+                        self.terms.clear();
+                        lower = ValueT::zero();
+                        break;
+                    } else {
+                        lower = lower - coefficient;
+                    }
+                }
+            } else {
+                self.terms.push((literal, coefficient));
+            }
+        }
+        // lower より大きい係数を lower に一致させる
+        for (_, coefficient) in self.terms.iter_mut() {
+            if *coefficient > lower {
+                *coefficient = lower;
+            }
+        }
+        // 係数が 0 である項を除く
+        self.terms.retain(|&(_, coefficient)| coefficient > ValueT::zero());
+        // 係数の最大公約数を使って丸め
+        if self.terms.len() >= 1 {
+            let mut gcd = ValueT::zero();
+            for (_, coefficient) in self.terms.iter() {
+                gcd = gcd.gcd(coefficient);
+            }
+            for (_, coefficient) in self.terms.iter_mut() {
+                debug_assert!(*coefficient % gcd == ValueT::zero());
+                *coefficient = *coefficient / gcd;
+            }
+            lower = lower.div_ceil(&gcd);
+        }
+        // 下限より小さい係数の合計を算出
+        let mut sum_of_unsaturating_coefficients = ValueT::zero();
+        for (_, coefficient) in self.terms.iter_mut() {
+            if *coefficient < lower {
+                sum_of_unsaturating_coefficients = sum_of_unsaturating_coefficients + *coefficient;
+            }
+        }
+        // 下限より小さい係数の合計が下限未満であればそれらは 0 に切り下げることができる
+        if sum_of_unsaturating_coefficients < lower {
+            self.terms.retain(|&(_, coefficient)| coefficient == lower);
+            for (_, coefficient) in self.terms.iter_mut() {
+                *coefficient = ValueT::one();
+            }
+            lower = ValueT::one();
+        }
+        return LinearConstraintView::new(self.terms.iter().cloned(), lower);
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LinearConstraintExplainKey {
     row_id: usize,
 }
 
 #[derive(Clone, Debug)]
-struct Row<ValueT> {
-    terms: Vec<(Literal, ValueT)>,
-    lower: ValueT,
+struct Row {
+    terms: Vec<(Literal, u64)>,
+    lower: u64,
     is_learnt: bool,
-    sup: ValueT,
-    max_unassigned_coefficient: ValueT,
+    sup: u64,
+    max_unassigned_coefficient: u64,
 }
 
-impl<ValueT> LinearConstraintTrait for &Row<ValueT>
-where
-    ValueT: Integer + Unsigned + Copy + FromPrimitive,
-{
-    type Value = ValueT;
+impl LinearConstraintTrait for &Row {
+    type Value = u64;
     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
         self.terms.iter().cloned()
     }
@@ -284,35 +441,56 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
-struct Column<ValueT> {
-    terms: Vec<(usize, ValueT)>,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LinearConstraintEngineExplainKey {
+    LinearConstraint(LinearConstraintExplainKey),
+    CountConstraint(CountConstraintEngineExplainKey),
 }
 
-impl<ValueT> Default for Column<ValueT> {
-    fn default() -> Self {
-        Self {
-            terms: Vec::default(),
-        }
+impl From<LinearConstraintExplainKey> for LinearConstraintEngineExplainKey {
+    fn from(explain_key: LinearConstraintExplainKey) -> Self {
+        Self::LinearConstraint(explain_key)
     }
 }
 
-pub struct LinearConstraintEngine<ValueT, InnerEngineT> {
+// impl From<CountConstraintEngineExplainKey> for LinearConstraintEngineExplainKey {
+//     fn from(explain_key: CountConstraintEngineExplainKey) -> Self {
+//         Self::CountConstraint(explain_key)
+//     }
+// }
+
+impl<T> From<T> for LinearConstraintEngineExplainKey
+where
+    T: Into<CountConstraintEngineExplainKey>,
+{
+    fn from(value: T) -> Self {
+        Self::CountConstraint(value.into())
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+struct Column {
+    terms: Vec<(usize, u64)>,
+}
+
+pub struct LinearConstraintEngine<CompositeExplainKeyT> {
+    strengthen: StrengthenLinearConstraint<u64>,
     state: State<LinearConstraintExplainKey>,
-    inner_engine: InnerEngineT,
-    rows: Vec<Row<ValueT>>,
-    columns: LiteralArray<Column<ValueT>>,
+    inner_engine: CountConstraintEngine<CompositeExplainKeyT>,
+    rows: Vec<Row>,
+    columns: LiteralArray<Column>,
     number_of_confirmed_assignments: usize,
-    constraint_queue: VecDeque<(LinearConstraint<ValueT>, bool)>,
+    constraint_queue: VecDeque<(LinearConstraint<u64>, bool)>,
     conflict_rows: Set,
     confirming_rows: Set,
 }
 
-impl<ValueT, InnerEngineT> LinearConstraintEngine<ValueT, InnerEngineT> {
-    pub fn new(inner_engine: InnerEngineT) -> Self {
+impl<CompositeExplainKeyT> LinearConstraintEngine<CompositeExplainKeyT> {
+    pub fn new() -> Self {
         Self {
+            strengthen: StrengthenLinearConstraint::default(),
             state: State::Noconflict,
-            inner_engine,
+            inner_engine: CountConstraintEngine::new(),
             rows: Vec::default(),
             columns: LiteralArray::default(),
             number_of_confirmed_assignments: 0,
@@ -323,61 +501,48 @@ impl<ValueT, InnerEngineT> LinearConstraintEngine<ValueT, InnerEngineT> {
     }
 }
 
-impl<ValueT, InnerEngineT> Deref for LinearConstraintEngine<ValueT, InnerEngineT>
-where
-    InnerEngineT: Deref,
-{
-    type Target = InnerEngineT::Target;
+impl<CompositeExplainKeyT> Deref for LinearConstraintEngine<CompositeExplainKeyT> {
+    type Target = DecisionStack<CompositeExplainKeyT>;
     fn deref(&self) -> &Self::Target {
         self.inner_engine.deref()
     }
 }
 
-impl<ValueT, InnerEngineT> EngineTrait for LinearConstraintEngine<ValueT, InnerEngineT>
+impl<CompositeExplainKeyT> LinearConstraintEngine<CompositeExplainKeyT>
 where
-    ValueT: Integer + Unsigned + Copy + FromPrimitive + Debug,
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey: From<LinearConstraintExplainKey>,
+    CompositeExplainKeyT: From<LinearConstraintExplainKey>
+        + From<CountConstraintExplainKey>
+        + From<MonadicConstraintExplainKey>,
 {
-    type CompositeExplainKey = InnerEngineT::CompositeExplainKey;
-    type ExplainKey = Either<LinearConstraintExplainKey, InnerEngineT::ExplainKey>;
-    type ExplanationConstraint<'a>
-        = Either<
-        impl LinearConstraintTrait<Value = ValueT> + 'a,
-        InnerEngineT::ExplanationConstraint<'a>,
-    >
-    where
-        Self: 'a;
-
-    fn state(&self) -> State<Self::ExplainKey> {
+    pub fn state(&self) -> State<LinearConstraintEngineExplainKey> {
         return self.state.composite(self.inner_engine.state());
     }
 
-    fn explain(&self, explain_key: Self::ExplainKey) -> Self::ExplanationConstraint<'_> {
-        match explain_key {
-            Either::Left(explain_key) => {
-                return Either::Left(&self.rows[explain_key.row_id]);
+    pub fn explain(
+        &self,
+        explain_key: LinearConstraintEngineExplainKey,
+    ) -> impl LinearConstraintTrait<Value = u64> {
+        return match explain_key {
+            LinearConstraintEngineExplainKey::LinearConstraint(explain_key) => {
+                CompositeLinearConstraint::Left(&self.rows[explain_key.row_id])
             }
-            Either::Right(explain_key) => {
-                return Either::Right(self.inner_engine.explain(explain_key));
+            LinearConstraintEngineExplainKey::CountConstraint(explain_key) => {
+                CompositeLinearConstraint::Right(self.inner_engine.explain(explain_key))
             }
-        }
+        };
     }
 
-    fn add_variable(&mut self) {
+    pub fn add_variable(&mut self) {
         self.inner_engine.add_variable();
         self.columns.push([Column::default(), Column::default()]);
     }
 
-    fn assign(&mut self, literal: Literal, reason: Reason<Self::CompositeExplainKey>) {
-        // if let Reason::Propagation { explain_key } = reason {
-        //     assert!(explain_key.try_into().is_err());
-        // }
+    pub fn assign(&mut self, literal: Literal, reason: Reason<CompositeExplainKeyT>) {
         self.inner_engine.assign(literal, reason);
         self.propagate();
     }
 
-    fn backjump(&mut self, backjump_level: usize) {
+    pub fn backjump(&mut self, backjump_level: usize) {
         let backjump_order = self.inner_engine.order_range(backjump_level).end;
         debug_assert!(backjump_order <= self.number_of_confirmed_assignments);
         while self.number_of_confirmed_assignments > backjump_order {
@@ -405,32 +570,45 @@ where
         }
         self.propagate();
     }
-}
 
-impl<ValueT, InnerEngineT, LinearConstraintT, InnerConstraintT>
-    EngineAddConstraintTrait<Either<LinearConstraintT, InnerConstraintT>>
-    for LinearConstraintEngine<ValueT, InnerEngineT>
-where
-    ValueT: Integer + Unsigned + Copy + FromPrimitive + Debug,
-    LinearConstraintT: LinearConstraintTrait<Value = ValueT>,
-    InnerEngineT: EngineTrait + EngineAddConstraintTrait<InnerConstraintT>,
-    InnerEngineT::CompositeExplainKey: From<LinearConstraintExplainKey>,
-{
-    fn add_constraint(
+    pub fn add_constraint(
         &mut self,
-        constraint: Either<LinearConstraintT, InnerConstraintT>,
+        constraint: &impl LinearConstraintTrait<Value = u64>,
         is_learnt: bool,
     ) {
-        match constraint {
-            // self 用の制約である場合
-            Either::Left(constraint) => {
-                // CountConstraint を構築
+        {
+            // for (literal, coefficient) in constraint.iter_terms() {
+            //     eprint!("{} {} ", literal, coefficient);
+            // }
+            // eprintln!(">= {}", constraint.lower());
+            // 制約を強化
+            let constraint = self.strengthen.exec(constraint, &self.inner_engine);
+            // for (literal, coefficient) in constraint.iter_terms() {
+            //     eprint!("{} {} ", literal, coefficient);
+            // }
+            // eprintln!(">= {}", constraint.lower());
+            // 恒等的に充足される制約であれば追加しない
+            if constraint.lower() == 0 {
+                return;
+            }
+            if constraint.iter_terms().all(|(_, coefficient)| coefficient == 1) {
+                // すべての係数が 1 である場合には inner_engine に追加する
+                self.inner_engine.add_constraint(
+                    &CountConstraintView::new(
+                        constraint.iter_terms().map(|(literal, _)| literal),
+                        constraint.lower() as usize,
+                    ),
+                    is_learnt,
+                );
+            } else {
+                // そうでなければ伝播の発生を確認して状態を更新し，制約をキューに追加
                 let mut constraint: LinearConstraint<_> = (&constraint).into();
-
                 // 伝播が発生する最小の決定レベルを特定
+                // TODO: 無駄に浅い階層までバックジャンプすることがあるので，CalculatePropagationLevel を使う
                 let min_propagation_level = {
-                    let mut sup = ValueT::zero();
-                    let mut max_unassigned_coefficient = ValueT::zero();
+                    // 現在の上界と未割り当て変数の係数の最大値を算出
+                    let mut sup = 0;
+                    let mut max_unassigned_coefficient = 0;
                     for (literal, coefficient) in constraint.terms.iter().cloned() {
                         if !self.inner_engine.is_false(literal) {
                             sup = sup + coefficient;
@@ -478,22 +656,11 @@ where
                 // 制約条件をキューに追加
                 self.constraint_queue.push_back((constraint, is_learnt));
             }
-            // inner_engine 用の制約である場合
-            Either::Right(constraint) => {
-                self.inner_engine.add_constraint(constraint, is_learnt);
-            }
         }
 
         self.propagate();
     }
-}
 
-impl<ValueT, InnerEngineT> LinearConstraintEngine<ValueT, InnerEngineT>
-where
-    ValueT: Integer + Unsigned + Copy + Debug,
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey: From<LinearConstraintExplainKey>,
-{
     fn propagate(&mut self) {
         self.conflict_rows.clear();
         self.confirming_rows.clear();
@@ -573,7 +740,7 @@ where
         let row = &mut self.rows[row_id];
         debug_assert!(row.sup >= row.lower);
         debug_assert!(row.sup < row.lower + row.max_unassigned_coefficient);
-        row.max_unassigned_coefficient = ValueT::zero();
+        row.max_unassigned_coefficient = 0;
         while k < row.terms.len() {
             let (literal, coefficient) = row.terms[k];
             if !self.inner_engine.is_assigned(literal.index()) {
@@ -637,7 +804,7 @@ where
         // 現在の決定レベルが 0 でない場合，現在の決定レベルよりも前に伝播が発生することはないはず
         #[cfg(debug_assertions)]
         if self.decision_level() != 0 {
-            let mut sup_at_previous_decision_level = ValueT::zero();
+            let mut sup_at_previous_decision_level = 0;
             for &(literal, coefficient) in constraint.terms.iter() {
                 if !(self.inner_engine.is_false(literal)
                     && self.inner_engine.get_decision_level(literal.index())
@@ -650,8 +817,8 @@ where
         }
 
         // 上界と未割り当てリテラルの係数の最大値を計算
-        let mut sup = ValueT::zero();
-        let mut max_unassigned_coefficient = ValueT::zero();
+        let mut sup = 0;
+        let mut max_unassigned_coefficient = 0;
         for &(literal, coefficient) in constraint.terms.iter() {
             if !self.inner_engine.is_false(literal) {
                 sup = sup + coefficient;

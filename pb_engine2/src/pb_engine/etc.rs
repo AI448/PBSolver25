@@ -79,13 +79,14 @@ impl<ExplainKeyT> State<ExplainKeyT> {
         }
     }
 
-    pub fn composite<OtherExplainKeyT>(
+    pub fn composite<OtherExplainKeyT, OutputExplainKeyT>(
         &self,
         other: State<OtherExplainKeyT>,
-    ) -> State<Either<ExplainKeyT, OtherExplainKeyT>>
+    ) -> State<OutputExplainKeyT>
     where
         ExplainKeyT: Copy,
         OtherExplainKeyT: Copy,
+        OutputExplainKeyT: From<ExplainKeyT> + From<OtherExplainKeyT>,
     {
         if self.is_prior_to(&other) {
             return match self {
@@ -93,7 +94,7 @@ impl<ExplainKeyT> State<ExplainKeyT> {
                     backjump_level: *backjump_level,
                 },
                 State::Conflict { explain_key } => State::Conflict {
-                    explain_key: Either::Left(*explain_key),
+                    explain_key: (*explain_key).into(),
                 },
                 State::Noconflict => State::Noconflict,
             };
@@ -103,7 +104,7 @@ impl<ExplainKeyT> State<ExplainKeyT> {
                     State::BackjumpRequired { backjump_level }
                 }
                 State::Conflict { explain_key } => State::Conflict {
-                    explain_key: Either::Right(explain_key),
+                    explain_key: explain_key.into(),
                 },
                 State::Noconflict => State::Noconflict,
             };

@@ -5,7 +5,7 @@ use either::Either;
 use ordered_float::OrderedFloat;
 
 // use crate::analyze::utility::divide_linear_constraint;
-use crate::pb_engine::{LinearConstraintTrait, PBEngine};
+use crate::pb_engine::{CompositeLinearConstraint, LinearConstraintTrait, PBEngine};
 
 use super::identify_conflict_causals::IdentifyConflictCausals;
 use super::round::{Round, Round2};
@@ -33,16 +33,16 @@ impl FlattenConflictConstraint {
         &'a mut self,
         conflict_constraint: &'a impl LinearConstraintTrait<Value = u128>,
         conflict_order: usize,
-        engine: &PBEngine<u64>,
+        engine: &'a PBEngine,
     ) -> impl LinearConstraintTrait<Value = u128> + 'a {
-        let (_, max_coefficient) = Self::calculate_coefficient_range(&conflict_constraint);
+        let (_, max_coefficient) = Self::calculate_coefficient_range(conflict_constraint);
         if max_coefficient <= self.threshold as u128 {
-            return Either::Left(conflict_constraint);
+            return CompositeLinearConstraint::Left(conflict_constraint.as_view());
         }
 
         // 矛盾の原因となっている割り当てを特定
         let (causals, _) = self.identify_causals.call(
-            &conflict_constraint,
+            conflict_constraint,
             conflict_order,
             |literal, _| {
                 // 割り当て順序が早いものを優先
@@ -68,7 +68,7 @@ impl FlattenConflictConstraint {
         // );
         let weakened_conflict_constraint = conflict_constraint;
         // 係数の範囲を算出
-        let (_, max_coefficient) = Self::calculate_coefficient_range(&weakened_conflict_constraint);
+        let (_, max_coefficient) = Self::calculate_coefficient_range(weakened_conflict_constraint);
         let min_causal_coefficient = weakened_conflict_constraint
             .iter_terms()
             .filter(|&(literal, _)| causals.contains_key(!literal))
@@ -96,7 +96,7 @@ impl FlattenConflictConstraint {
             |_| 0.0,
             engine,
         );
-        return Either::Right(rounded_conflict_constraint);
+        return CompositeLinearConstraint::Right(rounded_conflict_constraint);
     }
 
     fn calculate_coefficient_range(

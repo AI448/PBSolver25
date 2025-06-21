@@ -52,7 +52,7 @@ fn main() {
 fn solve(pb_problem: &PBProblem) -> Status {
     let start_time = std::time::Instant::now();
 
-    let mut pb_engine = PBEngine::<u64>::new();
+    let mut pb_engine = PBEngine::new();
 
     {
         let max_index = pb_problem
@@ -91,7 +91,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
     // pb_engine に制約条件を追加
     {
         fn add_constraint(
-            pb_engine: &mut PBEngine<u64>,
+            pb_engine: &mut PBEngine,
             terms: impl Iterator<Item = (usize, i64)> + Clone,
             lower: i64,
         ) -> Result<(), ()> {

@@ -24,7 +24,7 @@ impl Resolve {
         conflict_constraint: &impl LinearConstraintTrait<Value = u64>,
         reason_constraint: &impl LinearConstraintTrait<Value = u64>,
         resolving_variable: usize,
-        engine: &PBEngine<u64>,
+        engine: &PBEngine,
     ) -> impl LinearConstraintTrait<Value = u128> + '_ {
         if reason_constraint
             .iter_terms()
@@ -73,11 +73,11 @@ impl Resolve {
             .1;
 
         let conflict_slack =
-            lhs_sup_of_linear_constraint_at(&conflict_constraint, conflict_order - 1, engine)
+            lhs_sup_of_linear_constraint_at(conflict_constraint, conflict_order - 1, engine)
                 as i128
                 - conflict_constraint.lower() as i128;
         let reason_slack =
-            lhs_sup_of_linear_constraint_at(&reason_constraint, conflict_order - 1, engine) as i128
+            lhs_sup_of_linear_constraint_at(reason_constraint, conflict_order - 1, engine) as i128
                 - reason_constraint.lower() as i128;
 
         if conflict_slack * (reason_coefficient as i128)
@@ -91,7 +91,7 @@ impl Resolve {
                 conflict_constraint.convert().mul((reason_coefficient / g) as u128),
             );
             self.resolved_constraint
-                .add_assign(reason_constraint.convert().mul((conflict_coefficient / g) as u128));
+                .add_assign(&reason_constraint.convert().mul((conflict_coefficient / g) as u128));
         } else {
             // MEMO: どちらを丸めても大して変わらない？
             // slack が小さい方を丸める
@@ -116,7 +116,7 @@ impl Resolve {
                 );
 
                 self.resolved_constraint.add_assign(
-                    rounded_reason_constraint.convert().mul(conflict_coefficient as u128),
+                    &rounded_reason_constraint.convert().mul(conflict_coefficient as u128),
                 );
             } else {
                 self.resolved_constraint.replace_by_linear_constraint(reason_constraint.convert());
@@ -129,7 +129,7 @@ impl Resolve {
                 );
 
                 self.resolved_constraint.add_assign(
-                    rounded_conflict_constraint.convert().mul(reason_coefficient as u128),
+                    &rounded_conflict_constraint.convert().mul(reason_coefficient as u128),
                 );
             }
         }
