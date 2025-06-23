@@ -1,7 +1,4 @@
-use crate::{
-    Literal,
-    pb_engine::{LinearConstraintTrait, PBEngine},
-};
+use crate::{Literal, constraint::LinearConstraintTrait, pb_engine::PBEngine};
 
 struct Term {
     literal: Literal,

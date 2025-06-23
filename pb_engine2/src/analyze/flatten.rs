@@ -4,11 +4,12 @@ use std::{u64, u128};
 use either::Either;
 use ordered_float::OrderedFloat;
 
+use crate::constraint::LinearConstraintTrait;
 // use crate::analyze::utility::divide_linear_constraint;
-use crate::pb_engine::{CompositeLinearConstraint, LinearConstraintTrait, PBEngine};
+use crate::pb_engine::PBEngine;
 
 use super::identify_conflict_causals::IdentifyConflictCausals;
-use super::round::{Round, Round2};
+use super::round::Round2;
 // use super::weaken::Weaken;
 
 #[derive(Clone)]
@@ -37,7 +38,7 @@ impl FlattenConflictConstraint {
     ) -> impl LinearConstraintTrait<Value = u128> + 'a {
         let (_, max_coefficient) = Self::calculate_coefficient_range(conflict_constraint);
         if max_coefficient <= self.threshold as u128 {
-            return CompositeLinearConstraint::Left(conflict_constraint.as_view());
+            return Either::Left(conflict_constraint.as_view());
         }
 
         // 矛盾の原因となっている割り当てを特定
@@ -96,7 +97,7 @@ impl FlattenConflictConstraint {
             |_| 0.0,
             engine,
         );
-        return CompositeLinearConstraint::Right(rounded_conflict_constraint);
+        return Either::Right(rounded_conflict_constraint);
     }
 
     fn calculate_coefficient_range(

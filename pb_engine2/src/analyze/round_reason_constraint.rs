@@ -3,17 +3,11 @@ use ordered_float::OrderedFloat;
 use crate::{
     Literal,
     analyze::utility::lhs_sup_of_linear_constraint_at,
-    pb_engine::{
-        LinearConstraint, LinearConstraintTrait, PBEngine, RandomAccessibleLinearConstraint,
-    },
+    constraint::{LinearConstraint, LinearConstraintTrait, RandomLinearConstraint},
+    pb_engine::PBEngine,
 };
 
-use super::{
-    identify_propagation_causals::IdentifyPropagationCausals,
-    round::{Round, Round2},
-    utility::strengthen_integer_linear_constraint,
-    // weaken::Weaken,
-};
+use super::{identify_propagation_causals::IdentifyPropagationCausals, round::Round2};
 
 pub struct RoundReasonConstraint {
     integrality_tolerance: f64,
@@ -37,7 +31,7 @@ impl RoundReasonConstraint {
     pub fn round(
         &mut self,
         reason_constraint: &impl LinearConstraintTrait<Value = u64>,
-        conflict_constraint: &RandomAccessibleLinearConstraint<u128>,
+        conflict_constraint: &RandomLinearConstraint<u128>,
         propagated_assignment: Literal,
         pb_engine: &PBEngine,
     ) -> impl LinearConstraintTrait<Value = u64> + '_ {

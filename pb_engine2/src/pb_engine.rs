@@ -1,139 +1,28 @@
 mod count_constraint_engine;
 mod decision_stack;
-// mod engine_trait;
+// mod two_sat_engine;
 mod etc;
 mod linear_constraint_engine;
 mod monadic_constraint_engine;
 
-use std::{fmt::Debug, ops::Deref};
+use std::ops::Deref;
 
-use either::Either;
-use num::{FromPrimitive, Integer, One, ToPrimitive, Unsigned};
 use utility::Map;
 
-use crate::{Literal, activities::Activities};
-pub use count_constraint_engine::{
-    CountConstraint, CountConstraintEngine, CountConstraintExplainKey, CountConstraintTrait,
-    CountConstraintView,
+use crate::{
+    Literal, activities::Activities, constraint::LinearConstraintTrait,
+    pb_engine::linear_constraint_engine::LinearEngineExplainKey,
 };
+pub use count_constraint_engine::{CardinalConstraintExplainKey, CardinalEngine};
 pub use decision_stack::DecisionStack;
-// pub use engine_trait::{EngineAddConstraintTrait, EngineTrait};
 pub use etc::{Reason, State};
-pub use linear_constraint_engine::{
-    CompositeLinearConstraint, LinearConstraint, LinearConstraintEngine,
-    LinearConstraintEngineExplainKey, LinearConstraintExplainKey, LinearConstraintTrait,
-    LinearConstraintView, RandomAccessibleLinearConstraint,
-};
-pub use monadic_constraint_engine::{
-    MonadicConstraint, MonadicConstraintEngine, MonadicConstraintExplainKey,
-};
+pub use linear_constraint_engine::LinearConstraintEngine;
+pub use monadic_constraint_engine::{OneSatEngine, OneSatEngineExplainKey};
 
-// #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-// pub enum PBExplainKey {
-//     MonadicClause(MonadicConstraintExplainKey),
-//     CountConstraint(CountConstraintExplainKey),
-//     LinearConstraint(LinearConstraintExplainKey),
-// }
-
-// impl From<MonadicConstraintExplainKey> for PBExplainKey {
-//     fn from(explain_key: MonadicConstraintExplainKey) -> Self {
-//         Self::MonadicClause(explain_key)
-//     }
-// }
-
-// impl From<CountConstraintExplainKey> for PBExplainKey {
-//     fn from(explain_key: CountConstraintExplainKey) -> Self {
-//         Self::CountConstraint(explain_key)
-//     }
-// }
-
-// impl From<LinearConstraintExplainKey> for PBExplainKey {
-//     fn from(explain_key: LinearConstraintExplainKey) -> Self {
-//         Self::LinearConstraint(explain_key)
-//     }
-// }
-
-// impl
-//     From<
-//         Either<
-//             LinearConstraintExplainKey,
-//             Either<CountConstraintExplainKey, MonadicConstraintExplainKey>,
-//         >,
-//     > for PBExplainKey
-// {
-//     fn from(
-//         value: Either<
-//             LinearConstraintExplainKey,
-//             Either<CountConstraintExplainKey, MonadicConstraintExplainKey>,
-//         >,
-//     ) -> Self {
-//         match value {
-//             Either::Left(explain_key) => Self::LinearConstraint(explain_key),
-//             Either::Right(explain_key) => match explain_key {
-//                 Either::Left(explain_key) => Self::CountConstraint(explain_key),
-//                 Either::Right(explain_key) => Self::MonadicClause(explain_key),
-//             },
-//         }
-//     }
-// }
-
-// impl From<PBExplainKey>
-//     for Either<
-//         LinearConstraintExplainKey,
-//         Either<CountConstraintExplainKey, MonadicConstraintExplainKey>,
-//     >
-// {
-//     fn from(explain_key: PBExplainKey) -> Self {
-//         match explain_key {
-//             PBExplainKey::LinearConstraint(explain_key) => Either::Left(explain_key),
-//             PBExplainKey::CountConstraint(explain_key) => Either::Right(Either::Left(explain_key)),
-//             PBExplainKey::MonadicClause(explain_key) => Either::Right(Either::Right(explain_key)),
-//         }
-//     }
-// }
-
-pub type PBExplainKey = LinearConstraintEngineExplainKey;
-
-// pub struct PBConstraint<LinearConstraintT, CountConstraintT>(
-//     Either<LinearConstraintT, Either<CountConstraintT, MonadicConstraint>>,
-// );
-
-// impl<LinearConstraintT, CountConstraintT> LinearConstraintTrait
-//     for PBConstraint<LinearConstraintT, CountConstraintT>
-// where
-//     LinearConstraintT: LinearConstraintTrait,
-//     CountConstraintT: CountConstraintTrait,
-// {
-//     type Value = LinearConstraintT::Value;
-//     fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
-//         return match &self.0 {
-//             Either::Left(linear_constraint) => Either::Left(linear_constraint.iter_terms()),
-//             Either::Right(constraint) => match constraint {
-//                 Either::Left(count_constraint) => Either::Right(Either::Left(
-//                     count_constraint.iter_terms().map(|literal| (literal, Self::Value::one())),
-//                 )),
-//                 Either::Right(monadic_constraint) => Either::Right(Either::Right(
-//                     [(monadic_constraint.literal, Self::Value::one())].into_iter(),
-//                 )),
-//             },
-//         };
-//     }
-
-//     fn lower(&self) -> Self::Value {
-//         return match &self.0 {
-//             Either::Left(linear_constraint) => linear_constraint.lower(),
-//             Either::Right(constraint) => match constraint {
-//                 Either::Left(count_constraint) => {
-//                     Self::Value::from_usize(count_constraint.lower()).unwrap()
-//                 }
-//                 Either::Right(_monadic_constraint) => Self::Value::one(),
-//             },
-//         };
-//     }
-// }
+pub type PBExplainKey = LinearEngineExplainKey;
 
 pub struct PBEngine {
-    inner_engine: LinearConstraintEngine<PBExplainKey>,
+    inner_engine: LinearConstraintEngine<u64, PBExplainKey>,
     // TODO: Activities は PBEngine の外に出す
     activities: Activities,
     variable_map: Map<f64>,
@@ -206,7 +95,7 @@ impl PBEngine {
     }
 
     pub fn explain(&self, explain_key: PBExplainKey) -> impl LinearConstraintTrait<Value = u64> {
-        self.inner_engine.explain(explain_key.into())
+        self.inner_engine.explain(explain_key)
     }
 
     pub fn add_variable(&mut self) {

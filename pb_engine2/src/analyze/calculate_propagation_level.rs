@@ -1,6 +1,6 @@
 use utility::Map;
 
-use crate::pb_engine::{LinearConstraintTrait, PBEngine};
+use crate::{constraint::LinearConstraintTrait, pb_engine::PBEngine};
 
 #[derive(Clone, Copy)]
 struct State {

@@ -1,7 +1,5 @@
 use crate::{
-    Literal,
-    collections::LiteralSet,
-    pb_engine::{LinearConstraintTrait, PBEngine},
+    Literal, collections::LiteralSet, constraint::LinearConstraintTrait, pb_engine::PBEngine,
 };
 
 #[derive(Clone)]

@@ -21,10 +21,8 @@ use utility::{drop_fixed_variable, lhs_sup_of_linear_constraint_at};
 use crate::{
     Boolean, Literal,
     collections::LiteralSet,
-    pb_engine::{
-        LinearConstraint, LinearConstraintTrait, LinearConstraintView, PBEngine, PBExplainKey,
-        Reason,
-    },
+    constraint::{ConstraintView, LinearConstraint, LinearConstraintTrait},
+    pb_engine::{PBEngine, PBExplainKey, Reason},
 };
 
 // TODO: learnt_constraint は LinearConstraint でいい
@@ -121,7 +119,7 @@ impl Analyze {
                 }
                 return AnalyzeResult::Backjumpable {
                     backjump_level: backjump_level,
-                    learnt_constraint: LinearConstraintView::new(
+                    learnt_constraint: ConstraintView::new(
                         self.conflict_constraint.iter_terms(),
                         self.conflict_constraint.lower(),
                     ),
@@ -172,4 +170,3 @@ impl Analyze {
     }
 }
 
-pub use utility::strengthen_integer_linear_constraint;

@@ -1,22 +1,25 @@
 use num::integer::gcd;
 
 use crate::{
-    analyze::utility::{lhs_sup_of_linear_constraint_at, strengthen_integer_linear_constraint},
-    pb_engine::{LinearConstraintTrait, PBEngine, RandomAccessibleLinearConstraint},
+    analyze::utility::lhs_sup_of_linear_constraint_at,
+    constraint::{LinearConstraintTrait, RandomLinearConstraint},
+    pb_engine::PBEngine, StrengthenConstraint,
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
 
 pub struct Resolve {
     round_constraint: RoundReasonConstraint,
-    resolved_constraint: RandomAccessibleLinearConstraint<u128>,
+    streangthen: StrengthenConstraint<u128>,
+    resolved_constraint: RandomLinearConstraint<u128>,
 }
 
 impl Resolve {
     pub fn new(integrality_tolerance: f64) -> Self {
         Self {
             round_constraint: RoundReasonConstraint::new(integrality_tolerance),
-            resolved_constraint: RandomAccessibleLinearConstraint::default(),
+            streangthen: StrengthenConstraint::default(),
+            resolved_constraint: RandomLinearConstraint::default(),
         }
     }
     pub fn call(
@@ -87,7 +90,7 @@ impl Resolve {
             // if conflict_slack == 0 || reason_slack == 0 {
             // if conflict_slack == 0 && reason_slack == 0 {
             let g = gcd(conflict_coefficient, reason_coefficient);
-            self.resolved_constraint.replace_by_linear_constraint(
+            self.resolved_constraint.replace_by_constraint(
                 conflict_constraint.convert().mul((reason_coefficient / g) as u128),
             );
             self.resolved_constraint
@@ -105,8 +108,7 @@ impl Resolve {
                 // 係数が大きい方を丸める
                 // if reason_coefficient >= conflict_coefficient {
                 // if true {
-                self.resolved_constraint
-                    .replace_by_linear_constraint(conflict_constraint.convert());
+                self.resolved_constraint.replace_by_constraint(conflict_constraint.convert());
 
                 let rounded_reason_constraint = self.round_constraint.round(
                     reason_constraint,
@@ -119,7 +121,7 @@ impl Resolve {
                     &rounded_reason_constraint.convert().mul(conflict_coefficient as u128),
                 );
             } else {
-                self.resolved_constraint.replace_by_linear_constraint(reason_constraint.convert());
+                self.resolved_constraint.replace_by_constraint(reason_constraint.convert());
 
                 let rounded_conflict_constraint = self.round_constraint.round(
                     conflict_constraint,
@@ -134,6 +136,7 @@ impl Resolve {
             }
         }
 
-        return strengthen_integer_linear_constraint(&self.resolved_constraint);
+        return self.streangthen.exec(&self.resolved_constraint, engine);
+        // return strengthen_integer_linear_constraint(&self.resolved_constraint);
     }
 }

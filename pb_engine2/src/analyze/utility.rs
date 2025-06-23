@@ -5,9 +5,8 @@ use std::ops::AddAssign;
 use std::{cmp::min, fmt::Debug};
 
 use crate::Literal;
-use crate::pb_engine::{
-    CompositeLinearConstraint, LinearConstraintTrait, LinearConstraintView, PBEngine,
-};
+use crate::constraint::{ConstraintView, LinearConstraintTrait, UnsignedIntegerTrait};
+use crate::pb_engine::PBEngine;
 
 pub fn drop_fixed_variable(
     constraint: &impl LinearConstraintTrait<Value = u64>,
@@ -19,7 +18,7 @@ pub fn drop_fixed_variable(
             lower -= coefficient;
         }
     }
-    return LinearConstraintView::new(
+    return ConstraintView::new(
         constraint
             .iter_terms()
             .filter(|(literal, _)| engine.get_decision_level(literal.index()) != 0),
@@ -76,56 +75,56 @@ where
     return sup;
 }
 
-pub fn strengthen_integer_linear_constraint<ValueT>(
-    constraint: &impl LinearConstraintTrait<Value = ValueT>,
-) -> impl LinearConstraintTrait<Value = ValueT>
-where
-    ValueT: Integer + Unsigned + Copy + FromPrimitive + AddAssign + Debug,
-{
-    let lower = constraint.lower();
+// pub fn strengthen_integer_linear_constraint<ValueT>(
+//     constraint: &impl LinearConstraintTrait<Value = ValueT>,
+// ) -> impl LinearConstraintTrait<Value = ValueT>
+// where
+//     ValueT: UnsignedIntegerTrait,
+// {
+//     let lower = constraint.lower();
 
-    let mut sum_of_unsaturating_coefficients = ValueT::zero();
-    for (_, coefficient) in constraint.iter_terms() {
-        if coefficient < lower {
-            sum_of_unsaturating_coefficients += coefficient;
-        }
-    }
+//     let mut sum_of_unsaturating_coefficients = ValueT::zero();
+//     for (_, coefficient) in constraint.iter_terms() {
+//         if coefficient < lower {
+//             sum_of_unsaturating_coefficients += coefficient;
+//         }
+//     }
 
-    if sum_of_unsaturating_coefficients < lower {
-        return CompositeLinearConstraint::Left(LinearConstraintView::new(
-            constraint.iter_terms().filter(move |&(_, coefficient)| coefficient >= lower),
-            ValueT::one(),
-        ));
-    } else {
-        let gcd =
-            calculate_gcd(constraint.iter_terms().map(|(_, coefficient)| min(coefficient, lower)));
-        return CompositeLinearConstraint::Right(LinearConstraintView::new(
-            constraint.iter_terms().filter_map(move |(literal, coefficient)| {
-                if coefficient != ValueT::zero() {
-                    debug_assert!(min(coefficient, lower) % gcd == ValueT::zero());
-                    Some((literal, min(coefficient, lower) / gcd))
-                } else {
-                    None
-                }
-            }),
-            constraint.lower().div_ceil(&gcd),
-        ));
-    }
-}
+//     if sum_of_unsaturating_coefficients < lower {
+//         return Either::Left(ConstraintView::new(
+//             constraint.iter_terms().filter(move |&(_, coefficient)| coefficient >= lower),
+//             ValueT::one(),
+//         ));
+//     } else {
+//         let gcd =
+//             calculate_gcd(constraint.iter_terms().map(|(_, coefficient)| min(coefficient, lower)));
+//         return Either::Right(ConstraintView::new(
+//             constraint.iter_terms().filter_map(move |(literal, coefficient)| {
+//                 if coefficient != ValueT::zero() {
+//                     debug_assert!(min(coefficient, lower) % gcd == ValueT::zero());
+//                     Some((literal, min(coefficient, lower) / gcd))
+//                 } else {
+//                     None
+//                 }
+//             }),
+//             constraint.lower().div_ceil(&gcd),
+//         ));
+//     }
+// }
 
-pub fn calculate_gcd<ValueT>(values: impl Iterator<Item = ValueT>) -> ValueT
-where
-    ValueT: Integer,
-{
-    let mut x = ValueT::zero();
-    for y in values {
-        if x.is_one() {
-            break;
-        }
-        x = gcd(x, y);
-    }
-    return x;
-}
+// pub fn calculate_gcd<ValueT>(values: impl Iterator<Item = ValueT>) -> ValueT
+// where
+//     ValueT: Integer,
+// {
+//     let mut x = ValueT::zero();
+//     for y in values {
+//         if x.is_one() {
+//             break;
+//         }
+//         x = gcd(x, y);
+//     }
+//     return x;
+// }
 
 // pub fn gcd<ValueT>(mut x: ValueT, mut y: ValueT) -> ValueT
 // where

@@ -1,164 +1,58 @@
 use std::{collections::VecDeque, ops::Deref};
 
 use either::Either;
+use num::{FromPrimitive, One, ToPrimitive, Zero};
 
 use crate::{
     Literal,
     collections::LiteralArray,
-    pb_engine::{
-        DecisionStack, MonadicConstraint, MonadicConstraintEngine, MonadicConstraintExplainKey,
-        decision_stack, monadic_constraint_engine::OneSatExplainKey,
-    },
+    constraint::{ConstraintView, LinearConstraintTrait, UnsignedIntegerTrait},
+    pb_engine::{OneSatEngine, OneSatEngineExplainKey},
 };
 
 use super::etc::{Reason, State};
 
-pub trait CountConstraintTrait {
-    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone;
-    fn lower(&self) -> usize;
-    fn len(&self) -> usize {
-        self.iter_terms().count()
-    }
-
-    fn drop_fixed_variables<ExplainKeyT>(
-        &self,
-        decision_stack: &DecisionStack<ExplainKeyT>,
-    ) -> impl CountConstraintTrait {
-        let mut lower = self.lower();
-        for literal in self.iter_terms() {
-            if lower == 0 {
-                break;
-            }
-            if decision_stack.get_decision_level(literal.index()) == 0
-                && decision_stack.is_true(literal)
-            {
-                lower -= 1;
-            }
-        }
-        return CountConstraintView::new(
-            self.iter_terms()
-                .filter(|&literal| decision_stack.get_decision_level(literal.index()) != 0),
-            lower,
-        );
-    }
-}
-
-impl<LeftCountConstraintT, RightConstraintT> CountConstraintTrait
-    for Either<LeftCountConstraintT, RightConstraintT>
-where
-    LeftCountConstraintT: CountConstraintTrait,
-    RightConstraintT: CountConstraintTrait,
-{
-    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone {
-        return match self {
-            Either::Left(left) => Either::Left(left.iter_terms()),
-            Either::Right(right) => Either::Right(right.iter_terms()),
-        };
-    }
-
-    fn lower(&self) -> usize {
-        return match self {
-            Either::Left(left) => left.lower(),
-            Either::Right(right) => right.lower(),
-        };
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct CountConstraint {
-    literals: Vec<Literal>,
-    lower: usize,
-}
-
-impl<CountConstraintT> From<&CountConstraintT> for CountConstraint
-where
-    CountConstraintT: CountConstraintTrait,
-{
-    fn from(count_constraint: &CountConstraintT) -> Self {
-        return Self {
-            literals: count_constraint.iter_terms().collect(),
-            lower: count_constraint.lower(),
-        };
-    }
-}
-
-impl CountConstraintTrait for CountConstraint {
-    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone {
-        self.literals.iter().cloned()
-    }
-
-    fn lower(&self) -> usize {
-        self.lower
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct CountConstraintView<IteratorT> {
-    literals: IteratorT,
-    lower: usize,
-}
-
-impl<IteratorT> CountConstraintView<IteratorT> {
-    pub fn new(literals: IteratorT, lower: usize) -> Self {
-        Self { literals, lower }
-    }
-}
-
-impl<IteratorT> CountConstraintTrait for CountConstraintView<IteratorT>
-where
-    IteratorT: Iterator<Item = Literal> + Clone,
-{
-    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone {
-        self.literals.clone()
-    }
-
-    fn lower(&self) -> usize {
-        self.lower
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct CountConstraintExplainKey {
+pub struct CardinalConstraintExplainKey {
     row_id: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CountConstraintEngineExplainKey {
-    OneSatEngine(OneSatExplainKey),
-    CountConstraint(CountConstraintExplainKey),
+pub enum CardinalEngineExplainKey {
+    CardinalConstraint(CardinalConstraintExplainKey),
+    OneSatEngine(OneSatEngineExplainKey),
 }
 
-impl From<OneSatExplainKey> for CountConstraintEngineExplainKey {
-    fn from(explain_key: OneSatExplainKey) -> Self {
-        Self::OneSatEngine(explain_key)
+impl From<CardinalConstraintExplainKey> for CardinalEngineExplainKey {
+    fn from(explain_key: CardinalConstraintExplainKey) -> Self {
+        Self::CardinalConstraint(explain_key)
     }
 }
 
-impl From<CountConstraintExplainKey> for CountConstraintEngineExplainKey {
-    fn from(explain_key: CountConstraintExplainKey) -> Self {
-        Self::CountConstraint(explain_key)
+impl<ExplainKeyT> From<ExplainKeyT> for CardinalEngineExplainKey
+where
+    ExplainKeyT: Into<OneSatEngineExplainKey>,
+{
+    fn from(explain_key: ExplainKeyT) -> Self {
+        Self::OneSatEngine(explain_key.into())
     }
 }
 
 #[derive(Clone, Debug)]
-struct Row {
+struct CardinalConstraint {
     literals: Vec<Literal>,
     lower: usize,
+}
+
+#[derive(Clone, Debug)]
+struct Row {
+    constraint: CardinalConstraint,
     is_learnt: bool,
 }
 
 impl Row {
     fn number_of_watched_literals(&self) -> usize {
-        return self.lower + 1;
-    }
-}
-
-impl CountConstraintTrait for &Row {
-    fn iter_terms(&self) -> impl Iterator<Item = Literal> + Clone {
-        self.literals.iter().cloned()
-    }
-    fn lower(&self) -> usize {
-        self.lower
+        return self.constraint.lower + 1;
     }
 }
 
@@ -173,20 +67,20 @@ struct Column {
     watchers: Vec<Watcher>,
 }
 
-pub struct CountConstraintEngine<CompositeExplainKey> {
-    state: State<CountConstraintExplainKey>,
-    inner_engine: MonadicConstraintEngine<CompositeExplainKey>,
+pub struct CardinalEngine<CompositeExplainKey> {
+    state: State<CardinalConstraintExplainKey>,
+    inner_engine: OneSatEngine<CompositeExplainKey>,
     rows: Vec<Row>,
     columns: LiteralArray<Column>,
     number_of_confirmed_assignments: usize,
-    constraint_queue: VecDeque<(CountConstraint, bool)>,
+    constraint_queue: VecDeque<(CardinalConstraint, bool)>,
 }
 
-impl<CompositeExplainKeyT> CountConstraintEngine<CompositeExplainKeyT> {
+impl<CompositeExplainKeyT> CardinalEngine<CompositeExplainKeyT> {
     pub fn new() -> Self {
         Self {
             state: State::Noconflict,
-            inner_engine: MonadicConstraintEngine::new(),
+            inner_engine: OneSatEngine::new(),
             rows: Vec::default(),
             columns: LiteralArray::default(),
             number_of_confirmed_assignments: 0,
@@ -195,34 +89,38 @@ impl<CompositeExplainKeyT> CountConstraintEngine<CompositeExplainKeyT> {
     }
 }
 
-impl<CompositeExplainKeyT> Deref for CountConstraintEngine<CompositeExplainKeyT> {
-    type Target = <MonadicConstraintEngine<CompositeExplainKeyT> as Deref>::Target;
+impl<CompositeExplainKeyT> Deref for CardinalEngine<CompositeExplainKeyT> {
+    type Target = <OneSatEngine<CompositeExplainKeyT> as Deref>::Target;
     fn deref(&self) -> &Self::Target {
         self.inner_engine.deref()
     }
 }
 
-impl<CompositeExplainKeyT> CountConstraintEngine<CompositeExplainKeyT>
+impl<CompositeExplainKeyT> CardinalEngine<CompositeExplainKeyT>
 where
-    CompositeExplainKeyT: From<CountConstraintExplainKey> + From<MonadicConstraintExplainKey>,
+    CompositeExplainKeyT: From<CardinalConstraintExplainKey> + From<OneSatEngineExplainKey>,
 {
-    pub fn state(&self) -> State<CountConstraintEngineExplainKey> {
+    pub fn state(&self) -> State<CardinalEngineExplainKey> {
         return self.state.composite(self.inner_engine.state());
     }
 
-    pub fn explain(
+    pub fn explain<ValueT>(
         &self,
-        explain_key: CountConstraintEngineExplainKey,
-    ) -> impl CountConstraintTrait {
+        explain_key: CardinalEngineExplainKey,
+    ) -> impl LinearConstraintTrait<Value = ValueT>
+    where
+        ValueT: UnsignedIntegerTrait,
+    {
         return match explain_key {
-            CountConstraintEngineExplainKey::OneSatEngine(explain_key) => {
-                Either::Left(CountConstraintView::new(
-                    [self.inner_engine.explain(explain_key).literal].into_iter(),
-                    1,
+            CardinalEngineExplainKey::CardinalConstraint(explain_key) => {
+                let constraint = &self.rows[explain_key.row_id].constraint;
+                Either::Left(ConstraintView::new(
+                    constraint.literals.iter().map(|&literal| (literal, ValueT::one())),
+                    ValueT::from_usize(constraint.lower).unwrap(),
                 ))
             }
-            CountConstraintEngineExplainKey::CountConstraint(explain_key) => {
-                Either::Right(&self.rows[explain_key.row_id])
+            CardinalEngineExplainKey::OneSatEngine(explain_key) => {
+                Either::Right(self.inner_engine.explain(explain_key))
             }
         };
     }
@@ -256,23 +154,36 @@ where
         self.propagate();
     }
 
-    pub fn add_constraint(&mut self, constraint: &impl CountConstraintTrait, is_learnt: bool) {
-        let mut constraint: CountConstraint =
-            (&constraint.drop_fixed_variables(&self.inner_engine)).into();
-        if constraint.lower() == 0 {
-            // 無効な制約条件であれば何もしない
+    pub fn add_constraint<ConstraintT>(&mut self, linear_constraint: &ConstraintT, is_learnt: bool)
+    where
+        ConstraintT: LinearConstraintTrait,
+    {
+        assert!(
+            linear_constraint
+                .iter_terms()
+                .all(|(_, coefficient)| coefficient == ConstraintT::Value::one())
+        );
+
+        if linear_constraint.lower() == ConstraintT::Value::zero() {
             return;
-        } else if constraint.len() == 1 {
-            // 項が 1 つであれば inner_engine に追加する
-            self.inner_engine.add_constraint(
-                MonadicConstraint {
-                    literal: constraint.iter_terms().next().unwrap(),
-                },
-                is_learnt,
-            );
+        }
+
+        // 決定レベル 0 での左辺値の上界
+        let sup0 = ConstraintT::Value::from_usize(linear_constraint.iter_terms().count()).unwrap();
+
+        if sup0 <= linear_constraint.lower() {
+            // 左辺値の上界が右辺値以下であれば inner_engine に追加
+            self.inner_engine.add_constraint(linear_constraint, is_learnt);
         } else {
+            let mut constraint = CardinalConstraint {
+                literals: Vec::from_iter(
+                    linear_constraint.iter_terms().map(|(literal, _)| literal),
+                ),
+                lower: linear_constraint.lower().to_usize().unwrap(),
+            };
+
             // 伝播が発生する最小の決定レベルを特定
-            let backjump_level = if constraint.len() > constraint.lower {
+            let backjump_level = if constraint.literals.len() > constraint.lower {
                 constraint.literals.sort_unstable_by_key(|literal| {
                     self.inner_engine.get_assignment_order(literal.index())
                 });
@@ -346,23 +257,23 @@ where
             let watcher = self.columns[!assignment].watchers[w];
             let row = &mut self.rows[watcher.row_id];
             debug_assert!(watcher.position < row.number_of_watched_literals());
-            debug_assert!(row.literals[watcher.position] == !assignment);
+            debug_assert!(row.constraint.literals[watcher.position] == !assignment);
 
-            for p in row.number_of_watched_literals()..row.literals.len() {
-                let literal = row.literals[p];
+            for p in row.number_of_watched_literals()..row.constraint.literals.len() {
+                let literal = row.constraint.literals[p];
                 if !self.inner_engine.is_false(literal) {
-                    row.literals.swap(watcher.position, p);
+                    row.constraint.literals.swap(watcher.position, p);
                     self.columns[!assignment].watchers.swap_remove(w);
                     self.columns[literal].watchers.push(watcher);
                     continue 'for_watcher;
                 }
             }
 
-            let explain_key = CountConstraintExplainKey {
+            let explain_key = CardinalConstraintExplainKey {
                 row_id: watcher.row_id,
             };
 
-            for &literal in row.literals[..row.number_of_watched_literals()].iter() {
+            for &literal in row.constraint.literals[..row.number_of_watched_literals()].iter() {
                 if literal == !assignment {
                     continue;
                 }
@@ -377,7 +288,7 @@ where
                         return;
                     }
                 } else if self.inner_engine.is_false(literal) {
-                    eprintln!("CONFLICT COUNT_CONSTRAINT {}", line!());
+                    // eprintln!("CONFLICT COUNT_CONSTRAINT {}", line!());
                     self.state.merge(State::Conflict { explain_key });
                     return;
                 }
@@ -415,27 +326,26 @@ where
 
         // 行を追加
         let row_id = self.rows.len();
-        let explain_key = CountConstraintExplainKey { row_id };
+        let explain_key = CardinalConstraintExplainKey { row_id };
         self.rows.push(Row {
-            literals: constraint.literals,
-            lower: constraint.lower,
+            constraint: constraint,
             is_learnt: is_learnt,
         });
         let row = self.rows.last_mut().unwrap();
 
-        if row.literals.len() < row.lower {
+        if row.constraint.literals.len() < row.constraint.lower {
             // 充足不可能な制約条件である場合
             debug_assert!(self.inner_engine.decision_level() == 0);
             // NOTE: 監視リテラルは不要
             eprintln!("CONFLICT COUNT_CONSTRAINT {}", line!());
             self.state = State::Conflict { explain_key };
             return;
-        } else if row.literals.len() == row.lower {
+        } else if row.constraint.literals.len() == row.constraint.lower {
             // すべてのリテラルが固定される場合
             debug_assert!(self.inner_engine.decision_level() == 0);
             // NOTE: 監視リテラルは不要
             // すべてのリテラルに True を割り当て
-            for &literal in row.literals.iter() {
+            for &literal in row.constraint.literals.iter() {
                 if !self.inner_engine.is_assigned(literal.index()) {
                     self.inner_engine.assign(
                         literal,
@@ -455,7 +365,7 @@ where
         } else {
             // それ以外
             // True が割り当たっているものを割り当ての昇順・未割り当て・Fase が割り当たっているものを割り当ての降順にソート
-            row.literals.sort_unstable_by_key(|&literal| {
+            row.constraint.literals.sort_unstable_by_key(|&literal| {
                 if self.inner_engine.is_true(literal) {
                     (0, self.inner_engine.get_assignment_order(literal.index()))
                 } else if !self.inner_engine.is_assigned(literal.index()) {
@@ -469,23 +379,30 @@ where
             });
             // 監視を追加
             for (position, &literal) in
-                row.literals[..row.number_of_watched_literals()].iter().enumerate()
+                row.constraint.literals[..row.number_of_watched_literals()].iter().enumerate()
             {
                 self.columns[literal].watchers.push(Watcher { row_id, position });
             }
 
             // 矛盾している場合
-            if self.inner_engine.is_false(row.literals[row.number_of_watched_literals() - 2]) {
+            if self
+                .inner_engine
+                .is_false(row.constraint.literals[row.number_of_watched_literals() - 2])
+            {
                 // state を Conflict に
                 eprintln!("CONFLICT COUNT_CONSTRAINT");
                 self.state = State::Conflict { explain_key };
                 return;
 
             // 伝播が発生する場合
-            } else if self.inner_engine.is_false(row.literals[row.number_of_watched_literals() - 1])
+            } else if self
+                .inner_engine
+                .is_false(row.constraint.literals[row.number_of_watched_literals() - 1])
             {
                 // 末尾以外の監視リテラルに True を割り当て
-                for &literal in row.literals[..row.number_of_watched_literals() - 1].iter() {
+                for &literal in
+                    row.constraint.literals[..row.number_of_watched_literals() - 1].iter()
+                {
                     if !self.inner_engine.is_assigned(literal.index()) {
                         self.inner_engine.assign(
                             literal,

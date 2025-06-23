@@ -4,7 +4,8 @@ use num::{FromPrimitive, Integer, Num, PrimInt, Signed, Unsigned};
 
 use crate::{
     Literal,
-    pb_engine::{LinearConstraintTrait, LinearConstraintView, PBEngine},
+    constraint::{ConstraintView, LinearConstraintTrait, UnsignedIntegerTrait},
+    pb_engine::PBEngine,
 };
 
 #[derive(Clone)]
@@ -135,7 +136,7 @@ impl Round {
     }
 
     pub fn get(&self) -> impl LinearConstraintTrait<Value = u64> {
-        let rounded_constraint = LinearConstraintView::new(
+        let rounded_constraint = ConstraintView::new(
             self.work.terms.iter().filter_map(move |term| {
                 let coefficient = min(
                     match term.rounding {
@@ -223,7 +224,7 @@ impl<ValueT> Clone for Round2<ValueT> {
 
 impl<ValueT> Round2<ValueT>
 where
-    ValueT: Integer + Unsigned + Copy + FromPrimitive + Debug,
+    ValueT: UnsignedIntegerTrait,
 {
     pub fn new() -> Self {
         Self {
@@ -347,7 +348,7 @@ where
             }
         }
 
-        let rounded_constraint = LinearConstraintView::new(
+        let rounded_constraint = ConstraintView::new(
             self.work.terms.iter().filter_map(move |term| {
                 let coefficient = min(
                     match term.rounding {

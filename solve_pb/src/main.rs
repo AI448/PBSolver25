@@ -6,8 +6,8 @@ mod read_opb;
 use std::{io::BufReader, usize};
 
 use pb_engine2::{
-    Analyze, AnalyzeResult, Boolean, CalculatePLBD, LinearConstraintTrait, LinearConstraintView,
-    Literal, PBEngine, PBState,
+    Analyze, AnalyzeResult, Boolean, CalculatePLBD, ConstraintView, LinearConstraintTrait, Literal,
+    PBEngine, PBState, StrengthenConstraint,
 };
 use plbd_watcher::PLBDWatcher;
 use read_opb::{PBProblem, RelationalOperator, read_opb};
@@ -54,6 +54,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
     let mut pb_engine = PBEngine::new();
 
+    let mut strengthen = StrengthenConstraint::default();
     {
         let max_index = pb_problem
             .constraints
@@ -94,6 +95,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             pb_engine: &mut PBEngine,
             terms: impl Iterator<Item = (usize, i64)> + Clone,
             lower: i64,
+            strengthen: &mut StrengthenConstraint<u64>,
         ) -> Result<(), ()> {
             // 自明に充足される制約であれば何もしない
             let sum_of_negative_coefficients: i128 = terms
@@ -130,7 +132,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             // 制約を追加
-            pb_engine.add_constraint(&LinearConstraintView::new(pb_terms, pb_lower as u64), false);
+            pb_engine.add_constraint(&strengthen.exec(&ConstraintView::new(pb_terms, pb_lower as u64), pb_engine), false);
 
             return Ok(());
         }
@@ -144,6 +146,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                     .iter()
                     .map(|weighted_term| (weighted_term.term.index - 1, weighted_term.weight)),
                 constraint.rhs,
+                &mut strengthen
             );
             if result.is_err() {
                 return Status::Unsatisfiable;
@@ -157,6 +160,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                         .iter()
                         .map(|weighted_term| (weighted_term.term.index - 1, -weighted_term.weight)),
                     -constraint.rhs,
+                    &mut strengthen
                 );
                 if result.is_err() {
                     return Status::Unsatisfiable;

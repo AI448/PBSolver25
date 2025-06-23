@@ -8,13 +8,14 @@ mod activities;
 mod analyze;
 mod calculate_plbd;
 mod collections;
+mod constraint;
 mod pb_engine;
 mod types;
 
 pub use analyze::{Analyze, AnalyzeResult};
 pub use calculate_plbd::CalculatePLBD;
-pub use pb_engine::{
-    LinearConstraint, LinearConstraintTrait, LinearConstraintView, PBEngine, PBExplainKey,
-    State as PBState,
+pub use constraint::{
+    ConstraintView, LinearConstraint, LinearConstraintTrait, RandomLinearConstraint, StrengthenConstraint
 };
+pub use pb_engine::{PBEngine, PBExplainKey, State as PBState};
 pub use types::{Boolean, Literal};
