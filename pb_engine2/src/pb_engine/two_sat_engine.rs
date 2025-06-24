@@ -1,83 +1,49 @@
-use std::{collections::VecDeque, ops::Deref};
-
-use either::Either;
-
+use super::etc::State;
 use crate::{
-    Literal,
+    ConstraintView, LinearConstraintTrait, Literal,
     collections::LiteralArray,
-    engine_trait::{EngineAddConstraintTrait, EngineTrait},
-    etc::{Reason, State},
+    constraint::UnsignedIntegerTrait,
+    pb_engine::{DecisionStack, OneSatEngine, OneSatEngineExplainKey, Reason},
 };
-
-pub trait CliqueConstraintTrait {
-    fn iter_literals(&self) -> impl Iterator<Item = Literal> + Clone;
-}
-
-#[derive(Clone, Debug)]
-pub struct CliqueConstraint {
-    literals: Vec<Literal>,
-}
-
-impl CliqueConstraint {
-    pub fn new(literals: impl Iterator<Item = Literal>) -> Self {
-        return Self {
-            literals: literals.collect(),
-        };
-    }
-}
-
-impl<CliqueConstraintT> From<&CliqueConstraintT> for CliqueConstraint
-where
-    CliqueConstraintT: CliqueConstraintTrait,
-{
-    fn from(clique_constraint: &CliqueConstraintT) -> Self {
-        return Self {
-            literals: clique_constraint.iter_literals().collect(),
-        };
-    }
-}
-
-impl CliqueConstraintTrait for CliqueConstraint {
-    fn iter_literals(&self) -> impl Iterator<Item = Literal> + Clone {
-        self.literals.iter().cloned()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct CliqueConstraintView<IteratorT> {
-    iterator: IteratorT,
-}
-
-impl<IteratorT> CliqueConstraintView<IteratorT> {
-    pub fn new(iterator: IteratorT) -> Self {
-        Self { iterator }
-    }
-}
-
-impl<IteratorT> CliqueConstraintTrait for CliqueConstraintView<IteratorT>
-where
-    IteratorT: Iterator<Item = Literal> + Clone,
-{
-    fn iter_literals(&self) -> impl Iterator<Item = Literal> + Clone {
-        self.iterator.clone()
-    }
-}
+use either::Either;
+use num::{One, ToPrimitive};
+use std::{collections::VecDeque, ops::Deref};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CliqueConstraintExplainKey {
     row_id: usize,
 }
 
-#[derive(Clone, Debug)]
-struct Row {
-    literals: Vec<Literal>,
-    is_learnt: bool,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TwoSatEngineExplainKey {
+    CliqueConstraint(CliqueConstraintExplainKey),
+    OneSatEngine(OneSatEngineExplainKey),
 }
 
-impl CliqueConstraintTrait for &Row {
-    fn iter_literals(&self) -> impl Iterator<Item = Literal> + Clone {
-        return self.literals.iter().cloned();
+impl From<CliqueConstraintExplainKey> for TwoSatEngineExplainKey {
+    fn from(explain_key: CliqueConstraintExplainKey) -> Self {
+        Self::CliqueConstraint(explain_key)
     }
+}
+
+impl<ExplainKeyT> From<ExplainKeyT> for TwoSatEngineExplainKey
+where
+    ExplainKeyT: Into<OneSatEngineExplainKey>,
+{
+    fn from(explain_key: ExplainKeyT) -> Self {
+        Self::OneSatEngine(explain_key.into())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CliqueConstraint {
+    literals: Vec<Literal>,
+}
+
+#[derive(Clone, Debug)]
+struct Row {
+    constraint: CliqueConstraint,
+    is_learnt: bool,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -85,20 +51,20 @@ struct Column {
     row_ids: Vec<usize>,
 }
 
-pub struct CliqueConstraintEngine<InnerEngineT> {
+pub struct TwoSatEngine<CompositeExplainKeyT> {
     state: State<CliqueConstraintExplainKey>,
-    inner_engine: InnerEngineT,
+    inner_engine: OneSatEngine<CompositeExplainKeyT>,
     rows: Vec<Row>,
     columns: LiteralArray<Column>,
     number_of_confirmed_assignments: usize,
     constraint_queue: VecDeque<(CliqueConstraint, bool)>,
 }
 
-impl<InnerEngineT> CliqueConstraintEngine<InnerEngineT> {
-    pub fn new(inner_engine: InnerEngineT) -> Self {
+impl<CompositeExplainKeyT> TwoSatEngine<CompositeExplainKeyT> {
+    pub fn new() -> Self {
         Self {
             state: State::Noconflict,
-            inner_engine,
+            inner_engine: OneSatEngine::new(),
             rows: Vec::default(),
             columns: LiteralArray::default(),
             number_of_confirmed_assignments: 0,
@@ -107,64 +73,59 @@ impl<InnerEngineT> CliqueConstraintEngine<InnerEngineT> {
     }
 }
 
-impl<InnerEngineT> Deref for CliqueConstraintEngine<InnerEngineT>
-where
-    InnerEngineT: Deref,
-{
-    type Target = InnerEngineT::Target;
+impl<CompositeExplainKeyT> Deref for TwoSatEngine<CompositeExplainKeyT> {
+    type Target = DecisionStack<CompositeExplainKeyT>;
     fn deref(&self) -> &Self::Target {
         self.inner_engine.deref()
     }
 }
 
-impl<InnerEngineT> EngineTrait for CliqueConstraintEngine<InnerEngineT>
+impl<CompositeExplainKeyT> TwoSatEngine<CompositeExplainKeyT>
 where
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey:
-        From<CliqueConstraintExplainKey> + TryInto<CliqueConstraintExplainKey>,
+    CompositeExplainKeyT: From<OneSatEngineExplainKey> + From<CliqueConstraintExplainKey>,
 {
-    type CompositeExplainKey = InnerEngineT::CompositeExplainKey;
-    type ExplainKey = Either<CliqueConstraintExplainKey, InnerEngineT::ExplainKey>;
-    type ExplanationConstraint<'a>
-        = Either<impl CliqueConstraintTrait + 'a, InnerEngineT::ExplanationConstraint<'a>>
-    where
-        Self: 'a;
-
-    fn state(&self) -> State<Self::ExplainKey> {
+    pub fn state(&self) -> State<TwoSatEngineExplainKey> {
         return self.state.composite(self.inner_engine.state());
     }
 
-    fn explain(&self, explain_key: Self::ExplainKey) -> Self::ExplanationConstraint<'_> {
-        match explain_key {
-            Either::Left(explain_key) => {
-                return Either::Left(&self.rows[explain_key.row_id]);
+    pub fn explain<ValueT>(
+        &self,
+        explain_key: TwoSatEngineExplainKey,
+    ) -> impl LinearConstraintTrait<Value = ValueT>
+    where
+        ValueT: UnsignedIntegerTrait,
+    {
+        return match explain_key {
+            TwoSatEngineExplainKey::CliqueConstraint(explain_key) => {
+                let row = &self.rows[explain_key.row_id];
+                Either::Left(ConstraintView::new(
+                    row.constraint.literals.iter().map(|&literal| (literal, ValueT::one())),
+                    ValueT::from_usize(row.constraint.literals.len() - 1).unwrap(),
+                ))
             }
-            Either::Right(explain_key) => {
-                return Either::Right(self.inner_engine.explain(explain_key));
+            TwoSatEngineExplainKey::OneSatEngine(explain_key) => {
+                Either::Right(self.inner_engine.explain(explain_key))
             }
-        }
+        };
     }
 
-    fn add_variable(&mut self) {
+    pub fn add_variable(&mut self) {
         self.inner_engine.add_variable();
         self.columns.push([Column::default(), Column::default()]);
     }
 
-    fn assign(&mut self, literal: Literal, reason: Reason<Self::CompositeExplainKey>) {
+    pub fn assign(&mut self, literal: Literal, reason: Reason<CompositeExplainKeyT>) {
         assert!(self.state.is_noconflict());
         assert!(self.inner_engine.state().is_noconflict());
         debug_assert!(
             self.number_of_confirmed_assignments == self.inner_engine.number_of_assignments()
         );
-        if let Reason::Propagation { explain_key } = reason {
-            assert!(explain_key.try_into().is_err());
-        }
 
         self.inner_engine.assign(literal, reason);
         self.propagate();
     }
 
-    fn backjump(&mut self, backjump_level: usize) {
+    pub fn backjump(&mut self, backjump_level: usize) {
         let backjump_order = self.inner_engine.order_range(backjump_level).end;
         debug_assert!(backjump_order <= self.number_of_confirmed_assignments);
         self.number_of_confirmed_assignments = backjump_order;
@@ -178,61 +139,54 @@ where
         }
         self.propagate();
     }
-}
 
-impl<CliqueConstraintT, InnerEngineT, InnerConstraintT>
-    EngineAddConstraintTrait<Either<&CliqueConstraintT, InnerConstraintT>>
-    for CliqueConstraintEngine<InnerEngineT>
-where
-    CliqueConstraintT: CliqueConstraintTrait,
-    InnerEngineT: EngineTrait + EngineAddConstraintTrait<InnerConstraintT>,
-    InnerEngineT::CompositeExplainKey:
-        From<CliqueConstraintExplainKey> + TryInto<CliqueConstraintExplainKey>,
-{
-    fn add_constraint(
+    pub fn add_constraint<LinearConstraintT>(
         &mut self,
-        constraint: Either<&CliqueConstraintT, InnerConstraintT>,
+        constraint: &LinearConstraintT,
         is_learnt: bool,
-    ) {
-        match constraint {
-            Either::Left(constraint) => {
-                // CliqueConstraint を構築
-                let constraint: CliqueConstraint = constraint.into();
+    ) where
+        LinearConstraintT: LinearConstraintTrait,
+    {
+        assert!(
+            constraint
+                .iter_terms()
+                .all(|(_, coefficient)| coefficient == LinearConstraintT::Value::one())
+        );
+        assert!(constraint.iter_terms().count() <= constraint.lower().to_usize().unwrap() + 1);
 
-                // False が割り当てられているリテラルが存在すればその最小の決定レベルを取得
-                let min_falsified_decision_level = constraint
-                    .iter_literals()
-                    .filter(|&literal| self.inner_engine.is_false(literal))
-                    .map(|literal| self.inner_engine.get_decision_level(literal.index()))
-                    .min();
+        if constraint.iter_terms().count() <= constraint.lower().to_usize().unwrap() {
+            self.inner_engine.add_constraint(constraint, is_learnt);
+        } else {
+            // CliqueConstraint を構築
+            let constraint = CliqueConstraint {
+                literals: Vec::from_iter(constraint.iter_terms().map(|(literal, _)| literal)),
+            };
 
-                // 現在の決定レベルよりも前に伝播が発生するなら state を BackjumpRequired に
-                if let Some(min_falsified_decision_level) = min_falsified_decision_level
-                    && min_falsified_decision_level < self.inner_engine.decision_level()
-                {
-                    self.state.merge(State::BackjumpRequired {
-                        backjump_level: min_falsified_decision_level,
-                    });
-                    debug_assert!(self.state.is_backjump_required());
-                }
+            // False が割り当てられているリテラルが存在すればその最小の決定レベルを取得
+            let min_falsified_decision_level = constraint
+                .literals
+                .iter()
+                .filter(|&&literal| self.inner_engine.is_false(literal))
+                .map(|&literal| self.inner_engine.get_decision_level(literal.index()))
+                .min();
 
-                // 制約条件をキューに追加
-                self.constraint_queue.push_back((constraint, is_learnt));
+            // 現在の決定レベルよりも前に伝播が発生するなら state を BackjumpRequired に
+            if let Some(min_falsified_decision_level) = min_falsified_decision_level
+                && min_falsified_decision_level < self.inner_engine.decision_level()
+            {
+                self.state.merge(State::BackjumpRequired {
+                    backjump_level: min_falsified_decision_level,
+                });
+                debug_assert!(self.state.is_backjump_required());
             }
-            Either::Right(constraint) => {
-                self.inner_engine.add_constraint(constraint, is_learnt);
-            }
+
+            // 制約条件をキューに追加
+            self.constraint_queue.push_back((constraint, is_learnt));
         }
 
         self.propagate();
     }
-}
 
-impl<InnerEngineT> CliqueConstraintEngine<InnerEngineT>
-where
-    InnerEngineT: EngineTrait,
-    InnerEngineT::CompositeExplainKey: From<CliqueConstraintExplainKey>, // + TryInto<CliqueConstraintExplainKey>
-{
     fn propagate(&mut self) {
         while self.state.is_noconflict() && self.inner_engine.state().is_noconflict() {
             if self.number_of_confirmed_assignments < self.inner_engine.number_of_assignments() {
@@ -257,9 +211,11 @@ where
 
         for &row_id in self.columns[!assignment].row_ids.iter() {
             let row = &self.rows[row_id];
-            debug_assert!(row.literals.iter().find(|&&literal| literal == !assignment).is_some());
+            debug_assert!(
+                row.constraint.literals.iter().find(|&&literal| literal == !assignment).is_some()
+            );
             let explain_key = CliqueConstraintExplainKey { row_id };
-            for &literal in row.literals.iter() {
+            for &literal in row.constraint.literals.iter() {
                 if literal == !assignment {
                     continue;
                 }
@@ -302,8 +258,8 @@ where
         let (constraint, is_learnt) = self.constraint_queue.pop_front().unwrap();
 
         // 現在の決定レベルよりも前に False が割り当てられたリテラルは存在しないはず
-        debug_assert!(!constraint.iter_literals().any(
-            |literal| self.inner_engine.is_false(literal)
+        debug_assert!(!constraint.literals.iter().any(
+            |&literal| self.inner_engine.is_false(literal)
                 && self.inner_engine.get_decision_level(literal.index())
                     < self.inner_engine.decision_level()
         ));
@@ -312,25 +268,33 @@ where
         let row_id = self.rows.len();
         let explain_key = CliqueConstraintExplainKey { row_id };
         self.rows.push(Row {
-            literals: constraint.literals,
+            constraint,
             is_learnt,
         });
         let row = self.rows.last().unwrap();
 
         // リテラルを含む列に row_id を追加
-        for &literal in row.literals.iter() {
+        for &literal in row.constraint.literals.iter() {
             self.columns[literal].row_ids.push(row_id);
         }
 
         // false が割り当てられているリテラルの数を算出
-        let number_of_falsified_literals =
-            row.literals.iter().filter(|&&literal| self.inner_engine.is_false(literal)).count();
+        let number_of_falsified_literals = row
+            .constraint
+            .literals
+            .iter()
+            .filter(|&&literal| self.inner_engine.is_false(literal))
+            .count();
 
         if number_of_falsified_literals == 1 {
             // False が割り当てられているリテラルがちょうど 1 つであれば伝播
-            let &falsified_literal =
-                row.literals.iter().find(|&&literal| self.inner_engine.is_false(literal)).unwrap();
-            for &literal in row.literals.iter() {
+            let &falsified_literal = row
+                .constraint
+                .literals
+                .iter()
+                .find(|&&literal| self.inner_engine.is_false(literal))
+                .unwrap();
+            for &literal in row.constraint.literals.iter() {
                 if literal == falsified_literal {
                     continue;
                 }

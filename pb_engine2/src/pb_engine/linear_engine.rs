@@ -5,7 +5,7 @@ use crate::{
     constraint::{ConstraintView, LinearConstraintTrait, UnsignedIntegerTrait},
     pb_engine::{
         CardinalConstraintExplainKey, CardinalEngine, DecisionStack, OneSatEngineExplainKey,
-        count_constraint_engine::CardinalEngineExplainKey,
+        cardinal_engine::CardinalEngineExplainKey, two_sat_engine::CliqueConstraintExplainKey,
     },
 };
 use either::Either;
@@ -110,6 +110,7 @@ where
     ValueT: UnsignedIntegerTrait,
     CompositeExplainKeyT: From<LinearConstraintExplainKey>
         + From<CardinalConstraintExplainKey>
+        + From<CliqueConstraintExplainKey>
         + From<OneSatEngineExplainKey>,
 {
     pub fn state(&self) -> State<LinearEngineExplainKey> {

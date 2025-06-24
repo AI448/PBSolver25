@@ -6,16 +6,17 @@
 
 mod activities;
 mod analyze;
-mod calculate_plbd;
 mod collections;
 mod constraint;
 mod pb_engine;
 mod types;
+mod utility;
 
 pub use analyze::{Analyze, AnalyzeResult};
-pub use calculate_plbd::CalculatePLBD;
 pub use constraint::{
-    ConstraintView, LinearConstraint, LinearConstraintTrait, RandomLinearConstraint, StrengthenConstraint
+    ConstraintView, LinearConstraint, LinearConstraintTrait, RandomLinearConstraint,
+    StrengthenConstraint,
 };
 pub use pb_engine::{PBEngine, PBExplainKey, State as PBState};
 pub use types::{Boolean, Literal};
+pub use utility::calculate_plbd::CalculatePLBD;

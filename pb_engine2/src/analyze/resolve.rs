@@ -1,9 +1,10 @@
 use num::integer::gcd;
 
 use crate::{
+    StrengthenConstraint,
     analyze::utility::lhs_sup_of_linear_constraint_at,
     constraint::{LinearConstraintTrait, RandomLinearConstraint},
-    pb_engine::PBEngine, StrengthenConstraint,
+    pb_engine::PBEngine,
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
@@ -15,9 +16,9 @@ pub struct Resolve {
 }
 
 impl Resolve {
-    pub fn new(integrality_tolerance: f64) -> Self {
+    pub fn new() -> Self {
         Self {
-            round_constraint: RoundReasonConstraint::new(integrality_tolerance),
+            round_constraint: RoundReasonConstraint::new(),
             streangthen: StrengthenConstraint::default(),
             resolved_constraint: RandomLinearConstraint::default(),
         }
@@ -29,22 +30,6 @@ impl Resolve {
         resolving_variable: usize,
         engine: &PBEngine,
     ) -> impl LinearConstraintTrait<Value = u128> + '_ {
-        if reason_constraint
-            .iter_terms()
-            .find(|&(literal, _)| literal.index() == resolving_variable)
-            .is_none()
-        {
-            eprintln!("resolving_variable={}", resolving_variable);
-            eprintln!(
-                "conflict_level={}",
-                engine.get_decision_level(resolving_variable)
-            );
-            for (literal, coefficient) in reason_constraint.iter_terms() {
-                eprint!("{} {} ", coefficient, literal)
-            }
-            eprintln!(">= {}", reason_constraint.lower());
-        }
-
         let propagated_literal = reason_constraint
             .iter_terms()
             .find(|&(literal, _)| literal.index() == resolving_variable)
@@ -58,17 +43,13 @@ impl Resolve {
         );
 
         let conflict_order = engine.get_assignment_order(propagated_literal.index());
-        if conflict_order == 0 {
-            eprintln!(
-                "CONFLICT_ORDER==0, {}",
-                reason_constraint.iter_terms().count()
-            );
-        }
+
         let conflict_coefficient = conflict_constraint
             .iter_terms()
             .find(|&(literal, _)| literal.index() == resolving_variable)
             .unwrap()
             .1;
+
         let reason_coefficient = reason_constraint
             .iter_terms()
             .find(|&(literal, _)| literal.index() == resolving_variable)
@@ -87,8 +68,6 @@ impl Resolve {
             + reason_slack * (conflict_coefficient as i128)
             < (conflict_coefficient as i128) * (reason_coefficient as i128)
         {
-            // if conflict_slack == 0 || reason_slack == 0 {
-            // if conflict_slack == 0 && reason_slack == 0 {
             let g = gcd(conflict_coefficient, reason_coefficient);
             self.resolved_constraint.replace_by_constraint(
                 conflict_constraint.convert().mul((reason_coefficient / g) as u128),
@@ -96,18 +75,10 @@ impl Resolve {
             self.resolved_constraint
                 .add_assign(&reason_constraint.convert().mul((conflict_coefficient / g) as u128));
         } else {
-            // MEMO: どちらを丸めても大して変わらない？
-            // slack が小さい方を丸める
-            // if (conflict_slack as u128) * (reason_coefficient as u128) > (reason_slack as u128) * (conflict_coefficient as u128) {
             // slack が大きい方を丸める
-            if (conflict_slack as u128) * (reason_coefficient as u128)
-                < (reason_slack as u128) * (conflict_coefficient as u128)
+            if conflict_slack * (reason_coefficient as i128)
+                < reason_slack * (conflict_coefficient as i128)
             {
-                // 係数が小さい方を丸める
-                // if reason_coefficient <= conflict_coefficient {
-                // 係数が大きい方を丸める
-                // if reason_coefficient >= conflict_coefficient {
-                // if true {
                 self.resolved_constraint.replace_by_constraint(conflict_constraint.convert());
 
                 let rounded_reason_constraint = self.round_constraint.round(
@@ -137,6 +108,5 @@ impl Resolve {
         }
 
         return self.streangthen.exec(&self.resolved_constraint, engine);
-        // return strengthen_integer_linear_constraint(&self.resolved_constraint);
     }
 }

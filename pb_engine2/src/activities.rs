@@ -30,7 +30,7 @@ impl Activities {
     }
 
     pub fn update_assignment_probabilities(&mut self, assignments: impl Iterator<Item = Literal>) {
-        let r = 1.0 - 1.0 / self.time_constant;
+        let r = 1.0 - 1.0 / 1e4;
         for [p, q] in self.assignment_probabilities.iter_mut() {
             *p *= r;
             *q *= r;

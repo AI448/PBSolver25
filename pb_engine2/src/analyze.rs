@@ -1,28 +1,19 @@
-mod calculate_propagation_level;
-mod find_conflict_literal;
 mod flatten;
-mod identify_conflict_causals;
-mod identify_propagation_causals;
 mod resolve;
 mod round;
 mod round_reason_constraint;
 mod utility;
-// mod weaken;
 
-use std::{cmp::Reverse, usize};
-
-use calculate_propagation_level::CalculatePropagationLevel;
-use find_conflict_literal::FindConflictLiteral;
 use flatten::FlattenConflictConstraint;
-use identify_propagation_causals::IdentifyPropagationCausals;
 use resolve::Resolve;
 use utility::{drop_fixed_variable, lhs_sup_of_linear_constraint_at};
 
 use crate::{
-    Boolean, Literal,
+    Literal,
     collections::LiteralSet,
     constraint::{ConstraintView, LinearConstraint, LinearConstraintTrait},
     pb_engine::{PBEngine, PBExplainKey, Reason},
+    utility::calculate_propagation_level::CalculatePropagationLevel,
 };
 
 // TODO: learnt_constraint は LinearConstraint でいい
@@ -41,8 +32,6 @@ where
 
 pub struct Analyze {
     calculate_propagation_level: CalculatePropagationLevel,
-    find_conflict_literal: FindConflictLiteral,
-    identify_propagation_causals: IdentifyPropagationCausals,
     resolve: Resolve,
     flatten: FlattenConflictConstraint,
     conflicting_assignments: LiteralSet,
@@ -50,12 +39,10 @@ pub struct Analyze {
 }
 
 impl Analyze {
-    pub fn new(integrality_tolerance: f64) -> Self {
+    pub fn new() -> Self {
         Self {
             calculate_propagation_level: CalculatePropagationLevel::new(),
-            find_conflict_literal: FindConflictLiteral::default(),
-            identify_propagation_causals: IdentifyPropagationCausals::new(),
-            resolve: Resolve::new(integrality_tolerance),
+            resolve: Resolve::new(),
             flatten: FlattenConflictConstraint::new(u32::MAX as u64),
             conflicting_assignments: LiteralSet::default(),
             conflict_constraint: LinearConstraint::default(),
@@ -169,4 +156,3 @@ impl Analyze {
         }
     }
 }
-

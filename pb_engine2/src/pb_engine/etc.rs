@@ -1,36 +1,3 @@
-use std::{cmp::min, fmt::Debug};
-
-use either::Either;
-
-// #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-// pub enum CompositeExplainKey {
-//     MonadicClause(MonadicConstraintExplainKey),
-//     // CliqueConstraint(CliqueExplainKey),
-//     // CountConstraint(CountConstraintExplainKey),
-//     // IntegerLinearConstraint(IntegerLinearConstraintExplainKey),
-// }
-
-// impl From<MonadicConstraintExplainKey> for CompositeExplainKey {
-//     fn from(explain_key: MonadicConstraintExplainKey) -> Self {
-//         return Self::MonadicClause(explain_key);
-//     }
-// }
-
-// impl From<CliqueExplainKey> for CompositeExplainKey {
-//     fn from(explain_key: CliqueExplainKey) -> Self {
-//         return Self::CliqueConstraint(explain_key);
-//     }
-// }
-
-// #[derive(Clone, Debug)]
-// pub enum CompositeConstraint<CliqueConstraintT>
-// where
-//     CliqueConstraintT: CliqueConstraintTrait
-// {
-//     MonadicClause(MonadicClause),
-//     CliqueConstraint(CliqueConstraintT)
-// }
-
 #[derive(Clone, Copy, Debug)]
 pub enum State<ExplainKeyT> {
     /// 現在の決定レベルよりも前に伝播が発生する制約条件が追加された
@@ -119,7 +86,6 @@ pub enum Reason<ExplainKeyT> {
     Decision,
     /// 伝播
     Propagation {
-        // NOTE: 伝播がどの時点で発生したかをここに持たせることも考えられるが， Conflict Analisis で特定したほうが効率的
         /// 伝播を引き起こした制約条件
         explain_key: ExplainKeyT,
     },

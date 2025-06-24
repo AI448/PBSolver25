@@ -198,7 +198,7 @@ where
     ValueT: UnsignedIntegerTrait,
 {
     type Value = ValueT;
-    fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone + '_ {
+    fn iter_terms(&self) -> impl Iterator<Item = (Literal, Self::Value)> + Clone {
         return self
             .terms
             .iter()

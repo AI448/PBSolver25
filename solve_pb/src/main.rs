@@ -132,7 +132,10 @@ fn solve(pb_problem: &PBProblem) -> Status {
             }
 
             // 制約を追加
-            pb_engine.add_constraint(&strengthen.exec(&ConstraintView::new(pb_terms, pb_lower as u64), pb_engine), false);
+            pb_engine.add_constraint(
+                &strengthen.exec(&ConstraintView::new(pb_terms, pb_lower as u64), pb_engine),
+                false,
+            );
 
             return Ok(());
         }
@@ -146,7 +149,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                     .iter()
                     .map(|weighted_term| (weighted_term.term.index - 1, weighted_term.weight)),
                 constraint.rhs,
-                &mut strengthen
+                &mut strengthen,
             );
             if result.is_err() {
                 return Status::Unsatisfiable;
@@ -160,7 +163,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                         .iter()
                         .map(|weighted_term| (weighted_term.term.index - 1, -weighted_term.weight)),
                     -constraint.rhs,
-                    &mut strengthen
+                    &mut strengthen,
                 );
                 if result.is_err() {
                     return Status::Unsatisfiable;
@@ -172,7 +175,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
     // eprintln!("   RESTART CONFLICT      PLBD     FIXED    #COUNT   #LINEAR      TIME");
 
     let mut plbd_watcher = PLBDWatcher::new(10, 10000);
-    let mut analyzer = Analyze::new(1e-10);
+    let mut analyzer = Analyze::new();
     let mut calculate_plbd = CalculatePLBD::default();
 
     let mut conflict_count: usize = 0;
