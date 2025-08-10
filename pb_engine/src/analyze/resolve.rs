@@ -1,15 +1,13 @@
 use num::integer::gcd;
 
 use crate::{
-    LinearConstraintTrait, PBEngine,
-    analyze::utility::{StrengthenLinearConstraint, lhs_sup_of_linear_constraint_at},
+    LinearConstraintTrait, PBEngine, analyze::utility::lhs_sup_of_linear_constraint_at,
     constraints::RandomAccessibleLinearConstraint,
 };
 
 use super::round_reason_constraint::RoundReasonConstraint;
 
 pub struct Resolve {
-    strengthen: StrengthenLinearConstraint,
     round_constraint: RoundReasonConstraint,
     resolved_constraint: RandomAccessibleLinearConstraint<u128>,
 }
@@ -17,7 +15,6 @@ pub struct Resolve {
 impl Resolve {
     pub fn new(integrality_tolerance: f64) -> Self {
         Self {
-            strengthen: StrengthenLinearConstraint::default(),
             round_constraint: RoundReasonConstraint::new(integrality_tolerance),
             resolved_constraint: RandomAccessibleLinearConstraint::default(),
         }
@@ -158,6 +155,6 @@ impl Resolve {
             }
         }
 
-        return self.strengthen.strengthen(&self.resolved_constraint);
+        return &self.resolved_constraint;
     }
 }

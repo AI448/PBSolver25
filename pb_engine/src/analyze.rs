@@ -39,8 +39,9 @@ where
 
 pub struct Analyze {
     calculate_propagation_level: CalculatePropagationLevel,
-    find_conflict_literal: FindConflictLiteral,
-    identify_propagation_causals: IdentifyPropagationCausals,
+    strengthen: StrengthenLinearConstraint,
+    // find_conflict_literal: FindConflictLiteral,
+    // identify_propagation_causals: IdentifyPropagationCausals,
     resolve: Resolve,
     flatten: FlattenConflictConstraint,
     conflicting_assignments: LiteralSet,
@@ -51,8 +52,9 @@ impl Analyze {
     pub fn new(integrality_tolerance: f64) -> Self {
         Self {
             calculate_propagation_level: CalculatePropagationLevel::new(),
-            find_conflict_literal: FindConflictLiteral::default(),
-            identify_propagation_causals: IdentifyPropagationCausals::new(),
+            // find_conflict_literal: FindConflictLiteral::default(),
+            // identify_propagation_causals: IdentifyPropagationCausals::new(),
+            strengthen: StrengthenLinearConstraint::default(),
             resolve: Resolve::new(integrality_tolerance),
             flatten: FlattenConflictConstraint::new(u32::MAX as u64),
             conflicting_assignments: LiteralSet::default(),
@@ -75,6 +77,35 @@ impl Analyze {
         // self.conflicting_assignments
         //     .insert(Literal::new(conflict_variable, Boolean::TRUE));
 
+        {
+            let mut conflict_constraint0 = LinearConstraint::default();
+            conflict_constraint0.replace(&self.strengthen.strengthen(&drop_fixed_variable(
+                &engine.explain(conflict_explain_keys[Boolean::FALSE]),
+                engine,
+            )));
+            let mut conflict_constraint1 = LinearConstraint::default();
+            conflict_constraint1.replace(&self.strengthen.strengthen(&drop_fixed_variable(
+                &engine.explain(conflict_explain_keys[Boolean::TRUE]),
+                engine,
+            )));
+            self.conflict_constraint.replace(
+                self.strengthen.strengthen(
+                    &self
+                        .flatten
+                        .call(
+                            &self.resolve.call(
+                                &conflict_constraint0,
+                                &conflict_constraint1,
+                                conflict_variable,
+                                engine,
+                            ),
+                            usize::MAX,
+                            engine,
+                        )
+                        .convert(),
+                ),
+            );
+        }
         // conflict_constraint を初期化
         self.conflict_constraint.replace(
             self.flatten
@@ -179,9 +210,12 @@ impl Analyze {
             );
 
             self.conflict_constraint.replace(
-                self.flatten
-                    .call(&resolved_constraint, conflict_order, engine)
-                    .convert(),
+                self.strengthen.strengthen(
+                    &self
+                        .flatten
+                        .call(&resolved_constraint, conflict_order, engine)
+                        .convert(),
+                ),
             );
 
             self.conflicting_assignments.insert(!conflict_literal);

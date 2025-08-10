@@ -75,17 +75,17 @@ where
 
 #[derive(Default)]
 pub struct StrengthenLinearConstraint {
-    terms: Vec<(Literal, u128)>,
-    lower: u128,
-    work: Vec<(Literal, u128)>,
+    terms: Vec<(Literal, u64)>,
+    lower: u64,
+    work: Vec<(Literal, u64)>,
 }
 
 impl StrengthenLinearConstraint {
     pub fn strengthen(
         &mut self,
-        constraint: &impl LinearConstraintTrait<Value = u128>,
-    ) -> impl LinearConstraintTrait<Value = u128> {
-        let compare = |lhs: &(Literal, u128), rhs: &(Literal, u128)| rhs.1.cmp(&lhs.1);
+        constraint: &impl LinearConstraintTrait<Value = u64>,
+    ) -> impl LinearConstraintTrait<Value = u64> {
+        let compare = |lhs: &(Literal, u64), rhs: &(Literal, u64)| rhs.1.cmp(&lhs.1);
 
         self.lower = constraint.lower();
         self.terms.clear();
@@ -120,7 +120,7 @@ impl StrengthenLinearConstraint {
                 // }
 
                 for (_, coefficient) in self.terms.iter_mut() {
-                    *coefficient = *coefficient * m / self.lower;
+                    *coefficient = ((*coefficient as u128 * m as u128) / self.lower as u128) as u64;
                 }
                 self.terms.retain(|&(_, coefficient)| coefficient != 0);
                 self.lower = m;
