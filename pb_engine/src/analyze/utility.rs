@@ -84,7 +84,7 @@ impl StrengthenLinearConstraint {
     pub fn strengthen(
         &mut self,
         constraint: &impl LinearConstraintTrait<Value = u64>,
-    ) -> impl LinearConstraintTrait<Value = u64> {
+    ) -> impl LinearConstraintTrait<Value = u64> +'_ {
         let compare = |lhs: &(Literal, u64), rhs: &(Literal, u64)| rhs.1.cmp(&lhs.1);
 
         self.lower = constraint.lower();
@@ -101,13 +101,13 @@ impl StrengthenLinearConstraint {
             self.work.push((literal, coefficient));
             up_heap(&mut self.work, p, compare);
         }
-        let mut m = 1;
+        let mut candidate_lower = 1;
 
         loop {
             let sum_of_remainders = self
                 .terms
                 .iter()
-                .map(|&(_, coefficient)| (coefficient as u128 * m as u128) % self.lower as u128)
+                .map(|&(_, coefficient)| (coefficient as u128 * candidate_lower as u128) % self.lower as u128)
                 .sum::<u128>();
             if sum_of_remainders < self.lower as u128 {
                 // let dump = m != self.lower && m != 1 && sum_of_remainders != 0;
@@ -120,10 +120,10 @@ impl StrengthenLinearConstraint {
                 // }
 
                 for (_, coefficient) in self.terms.iter_mut() {
-                    *coefficient = ((*coefficient as u128 * m as u128) / self.lower as u128) as u64;
+                    *coefficient = ((*coefficient as u128 * candidate_lower as u128) / self.lower as u128) as u64;
                 }
                 self.terms.retain(|&(_, coefficient)| coefficient != 0);
-                self.lower = m;
+                self.lower = candidate_lower;
 
                 // if dump {
                 //     eprintln!("AFTER");
@@ -133,7 +133,7 @@ impl StrengthenLinearConstraint {
                 //     eprintln!(">= {}", self.lower);
                 // }
 
-                if self.terms.is_empty() || self.lower == m || self.lower == 1 {
+                if self.terms.is_empty() || self.lower == candidate_lower || self.lower == 1 {
                     return LinearConstraintView::new(self.terms.iter().cloned(), self.lower);
                 }
 
@@ -143,14 +143,14 @@ impl StrengthenLinearConstraint {
                     self.work.push((literal, coefficient));
                     up_heap(&mut self.work, p, compare);
                 }
-                m = 1;
+                candidate_lower = 1;
             }
 
             loop {
                 let largest = self.work[0].1;
-                let new_m = (self.lower + largest / 2) / largest;
-                if new_m > m {
-                    m = new_m;
+                let new_candidate_lower = self.lower.div_ceil(largest);
+                if new_candidate_lower > candidate_lower {
+                    candidate_lower = new_candidate_lower;
                     break;
                 }
                 let second = self.work[1..]

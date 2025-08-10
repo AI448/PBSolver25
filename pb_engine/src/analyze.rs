@@ -200,11 +200,15 @@ impl Analyze {
                 };
                 engine.explain(explain_key)
             };
-            let reason_constraint = drop_fixed_variable(&reason_constraint, engine);
+            // let reason_constraint = self.strengthen.strengthen(
+            //     &drop_fixed_variable(&reason_constraint, engine)
+            // );
 
             let resolved_constraint = self.resolve.call(
                 &self.conflict_constraint,
-                &reason_constraint,
+                &self.strengthen.strengthen(
+                &drop_fixed_variable(&reason_constraint, engine)
+                ),
                 conflict_literal.index(),
                 engine,
             );

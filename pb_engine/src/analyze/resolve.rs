@@ -155,6 +155,18 @@ impl Resolve {
             }
         }
 
+        let mut gcd = 0;
+        for (_, coefficient) in self.resolved_constraint.iter_terms() {
+            gcd = num::integer::gcd(gcd, coefficient);
+        }
+        if gcd >= 2 {
+            for (_, coefficient) in self.resolved_constraint.iter_terms_mut() {
+                debug_assert!(*coefficient % gcd == 0);
+                *coefficient /= gcd;
+            }
+            *self.resolved_constraint.lower_mut() = self.resolved_constraint.lower_mut().div_ceil(gcd);
+        }
+
         return &self.resolved_constraint;
     }
 }
