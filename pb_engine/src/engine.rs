@@ -3,17 +3,21 @@ mod assignment_queue;
 mod reason;
 
 use crate::{
-    collections::LiteralArray, decision_stack::DecisionStack, theories::{
+    CountConstraint, CountConstraintTrait, LinearConstraint, LinearConstraintTrait, MonadicClause,
+    collections::LiteralArray,
+    decision_stack::DecisionStack,
+    theories::{
         CountConstraintExplainKey, CountConstraintTheory, IntegerLinearConstraintExplainKey,
         IntegerLinearConstraintTheory, MonadicClauseExplainKey, MonadicClauseTheory,
         TheoryAddConstraintTrait, TheoryTrait,
-    }, types::{Boolean, Literal}, CountConstraint, CountConstraintTrait, LinearConstraint, LinearConstraintTrait, MonadicClause
+    },
+    types::{Boolean, Literal},
 };
 use activities::Activities;
 use assignment_queue::AssignmentQueue;
 use either::Either;
-use utility::Map;
 use std::ops::Deref;
+use utility::Map;
 
 pub use reason::Reason;
 
@@ -133,7 +137,7 @@ impl PBEngine {
             integer_linear_constraint_theory: IntegerLinearConstraintTheory::new(1e4),
             assignment_queue: AssignmentQueue::default(),
             state: PBState::Noconflict,
-            variable_map: Map::default()
+            variable_map: Map::default(),
         }
     }
     pub fn state(&self) -> PBState {
@@ -150,7 +154,7 @@ impl PBEngine {
     pub fn update_conflict_probabilities(
         &mut self,
         conflict_assignments: impl Iterator<Item = Literal>,
-        backjump_level: usize
+        backjump_level: usize,
     ) {
         // self.activities
         //     .update_conflict_probabilities(conflict_assignments);
@@ -158,7 +162,9 @@ impl PBEngine {
         for literal in conflict_assignments {
             self.variable_map.insert(literal.index(), 1.0);
         }
-        for literal in (0..self.decision_stack.number_of_assignments()).map(|order| self.decision_stack.get_assignment(order)) {
+        for literal in (0..self.decision_stack.number_of_assignments())
+            .map(|order| self.decision_stack.get_assignment(order))
+        {
             if !self.variable_map.contains_key(literal.index()) {
                 self.variable_map.insert(literal.index(), 0.0);
             }

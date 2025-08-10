@@ -47,9 +47,11 @@ impl Activities {
     }
 
     pub fn update_activity(&mut self, index: usize, increase_value: f64) {
-        self.activities[index] = (1.0 - 1.0 / self.time_constant) * self.activities[index] + increase_value / self.time_constant;
+        self.activities[index] = (1.0 - 1.0 / self.time_constant) * self.activities[index]
+            + increase_value / self.time_constant;
         if self.unassigned_variables.contains_key(index) {
-            self.unassigned_variables.insert(index, self.activities[index]);
+            self.unassigned_variables
+                .insert(index, self.activities[index]);
         }
     }
 
@@ -57,30 +59,30 @@ impl Activities {
     //     &mut self,
     //     conflict_assignments: impl Iterator<Item = Literal>,
     // ) {
-        // self.activity_increase_value /= 1.0 - 1.0 / self.time_constant;
-        // if self.activity_increase_value > 1e4 {
-        //     let buffer = Vec::from_iter(
-        //         self.unassigned_variables
-        //             .iter()
-        //             .map(|(&index, &activity)| (index, activity)),
-        //     );
-        //     self.unassigned_variables.clear();
-        //     for (index, activity) in buffer.into_iter() {
-        //         debug_assert!(activity == self.activities[index]);
-        //         self.unassigned_variables
-        //             .insert(index, activity / self.activity_increase_value);
-        //     }
-        //     for activity in self.activities.iter_mut() {
-        //         *activity /= self.activity_increase_value;
-        //     }
-        //     self.activity_increase_value = 1.0;
-        // }
+    // self.activity_increase_value /= 1.0 - 1.0 / self.time_constant;
+    // if self.activity_increase_value > 1e4 {
+    //     let buffer = Vec::from_iter(
+    //         self.unassigned_variables
+    //             .iter()
+    //             .map(|(&index, &activity)| (index, activity)),
+    //     );
+    //     self.unassigned_variables.clear();
+    //     for (index, activity) in buffer.into_iter() {
+    //         debug_assert!(activity == self.activities[index]);
+    //         self.unassigned_variables
+    //             .insert(index, activity / self.activity_increase_value);
+    //     }
+    //     for activity in self.activities.iter_mut() {
+    //         *activity /= self.activity_increase_value;
+    //     }
+    //     self.activity_increase_value = 1.0;
+    // }
 
-        // for assignment in conflict_assignments {
-        //     // self.activities[assignment.index()] += self.activity_increase_value;
-        //     self.unassigned_variables
-        //         .insert(assignment.index(), self.activities[assignment.index()]);
-        // }
+    // for assignment in conflict_assignments {
+    //     // self.activities[assignment.index()] += self.activity_increase_value;
+    //     self.unassigned_variables
+    //         .insert(assignment.index(), self.activities[assignment.index()]);
+    // }
     // }
 
     pub fn assignment_probability(&self, literal: Literal) -> f64 {

@@ -189,4 +189,4 @@ impl Analyze {
     }
 }
 
-pub use utility::strengthen_integer_linear_constraint;
+pub use utility::StrengthenLinearConstraint;

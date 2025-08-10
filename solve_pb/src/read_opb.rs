@@ -50,9 +50,7 @@ pub struct Variable {
     pub index: usize,
 }
 
-pub fn read_opb(
-    input: &mut std::io::BufReader<impl std::io::Read>,
-) -> Option<PBProblem> {
+pub fn read_opb(input: &mut std::io::BufReader<impl std::io::Read>) -> Option<PBProblem> {
     let mut constraints = Vec::default();
 
     let mut line = String::default();

@@ -11,7 +11,7 @@ mod engine;
 mod theories;
 mod types;
 
-pub use analyze::{Analyze, AnalyzeResult, strengthen_integer_linear_constraint};
+pub use analyze::{Analyze, AnalyzeResult, StrengthenLinearConstraint};
 pub use calculate_plbd::CalculatePLBD;
 pub use constraints::{
     CountConstraint, CountConstraintTrait, CountConstraintView, LinearConstraint,

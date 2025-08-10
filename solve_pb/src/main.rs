@@ -7,14 +7,13 @@ use std::{io::BufReader, usize};
 
 use pb_engine::{
     Analyze, AnalyzeResult, Boolean, CalculatePLBD, CountConstraintView, LinearConstraintTrait,
-    LinearConstraintView, Literal, MonadicClause, PBEngine, PBState,
-    strengthen_integer_linear_constraint,
+    LinearConstraintView, Literal, MonadicClause, PBEngine, PBState, StrengthenLinearConstraint,
 };
 use plbd_watcher::PLBDWatcher;
 use read_opb::{PBProblem, RelationalOperator, read_opb};
 
 enum Status {
-    Satisfiable{solution: Vec<Boolean>},
+    Satisfiable { solution: Vec<Boolean> },
     Unsatisfiable,
     Indefinite,
 }
@@ -23,14 +22,14 @@ fn main() {
     if let Some(pb_problem) = read_opb(&mut BufReader::new(std::io::stdin())) {
         let status = solve(&pb_problem);
         match status {
-            Status::Satisfiable{solution} => {
+            Status::Satisfiable { solution } => {
                 println!("s SATISFIABLE");
                 print!("v");
                 for (index, &value) in solution.iter().enumerate() {
                     match value {
                         Boolean::TRUE => {
                             print!(" x{}", index + 1);
-                        },
+                        }
                         Boolean::FALSE => {
                             print!(" -x{}", index + 1);
                         }
@@ -55,6 +54,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
     let mut pb_engine = PBEngine::new(10.0);
 
+    let mut strengthen = StrengthenLinearConstraint::default();
     {
         let max_index = pb_problem
             .constraints
@@ -88,7 +88,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             pb_engine.add_variable_with_initial_value(
                 Boolean::FALSE,
                 // number_of_appearances[i] as f64 / max_number_of_appearances as f64,
-                0.0
+                0.0,
             );
         }
     }
@@ -99,6 +99,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
             pb_engine: &mut PBEngine,
             terms: impl Iterator<Item = (usize, i64)> + Clone,
             lower: i64,
+            strengthen: &mut StrengthenLinearConstraint,
         ) -> Result<(), ()> {
             // 自明に充足される制約であれば何もしない
             let sum_of_negative_coefficients: i128 = terms
@@ -145,7 +146,9 @@ fn solve(pb_problem: &PBProblem) -> Status {
             // 制約を追加
             add_integer_linear_constraint(
                 pb_engine,
-                &LinearConstraintView::new(pb_terms, pb_lower as u64),
+                &strengthen
+                    .strengthen(&LinearConstraintView::new(pb_terms, pb_lower as u64).convert())
+                    .convert(),
                 false,
             );
 
@@ -161,6 +164,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                     .iter()
                     .map(|weighted_term| (weighted_term.term.index - 1, weighted_term.weight)),
                 constraint.rhs,
+                &mut strengthen,
             );
             if result.is_err() {
                 return Status::Unsatisfiable;
@@ -174,6 +178,7 @@ fn solve(pb_problem: &PBProblem) -> Status {
                         .iter()
                         .map(|weighted_term| (weighted_term.term.index - 1, -weighted_term.weight)),
                     -constraint.rhs,
+                    &mut strengthen,
                 );
                 if result.is_err() {
                     return Status::Unsatisfiable;
@@ -253,7 +258,13 @@ fn solve(pb_problem: &PBProblem) -> Status {
 
             pb_engine.backjump(backjump_level);
 
-            add_integer_linear_constraint(&mut pb_engine, &learnt_constraint, true);
+            add_integer_linear_constraint(
+                &mut pb_engine,
+                &strengthen
+                    .strengthen(&learnt_constraint.convert())
+                    .convert(),
+                true,
+            );
 
             // if conflict_count % 10000 == 0 {
             //     eprintln!(
@@ -284,8 +295,10 @@ fn solve(pb_problem: &PBProblem) -> Status {
                     constraint.rhs
                 );
             }
-            let solution = (0..pb_engine.number_of_variables()).map(|index| pb_engine.get_value(index)).collect();
-            return Status::Satisfiable{solution};
+            let solution = (0..pb_engine.number_of_variables())
+                .map(|index| pb_engine.get_value(index))
+                .collect();
+            return Status::Satisfiable { solution };
         } else if conflict_count >= previous_restart_timestamp + 10000
             || (conflict_count >= previous_restart_timestamp + 20
                 && plbd_watcher.lower_tail_probability() > 0.6)
@@ -296,7 +309,6 @@ fn solve(pb_problem: &PBProblem) -> Status {
             if pb_engine.decision_level() != 0 {
                 pb_engine.backjump(0);
             }
-
         } else {
             pb_engine.decide();
         }
@@ -311,7 +323,7 @@ fn add_integer_linear_constraint(
     if integer_linear_constraint.lower() == 0 {
         return;
     }
-    let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
+    // let integer_linear_constraint = strengthen_integer_linear_constraint(integer_linear_constraint);
 
     if integer_linear_constraint
         .iter_terms()
